@@ -1891,6 +1891,14 @@
     "model_vendor": "google",
     "model_version": "2025"
   },
+  "gemini-3.1-pro-preview": {
+    "display_name": "Gemini 3.1 Pro Preview",
+    "model_vendor": "google"
+  },
+  "gemini-3-flash-preview": {
+    "display_name": "Gemini 3 Flash Preview",
+    "model_vendor": "google"
+  },
   "gemini-2.5-pro": {
     "display_name": "Gemini 2.5 Pro",
     "model_vendor": "google"
@@ -3622,6 +3630,21 @@
     "display_name": "GLM 4.6 Exacto",
     "model_vendor": "zhipu",
     "model_version": "latest"
+  },
+  "zai/glm-5.1": {
+    "display_name": "GLM 5.1",
+    "model_vendor": "zai",
+    "model_version": "5.1"
+  },
+  "zai/glm-5": {
+    "display_name": "GLM 5",
+    "model_vendor": "zai",
+    "model_version": "5"
+  },
+  "zai/glm-4.7": {
+    "display_name": "GLM 4.7",
+    "model_vendor": "zai",
+    "model_version": "4.7"
   },
   "qwen.qwen3-235b-a22b-2507-v1:0": {
     "display_name": "Qwen.qwen3 235B A22b 2507",
