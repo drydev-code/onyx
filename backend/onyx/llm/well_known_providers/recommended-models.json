@@ -63,6 +63,33 @@
           "display_name": "Kimi K2 0905"
         }
       ]
+    },
+    "zai": {
+      "default_model": { "name": "glm-5.1", "display_name": "GLM 5.1" },
+      "additional_visible_models": [
+        { "name": "glm-5-turbo", "display_name": "GLM 5 Turbo" },
+        { "name": "glm-5v-turbo", "display_name": "GLM 5V Turbo" }
+      ]
+    },
+    "google_ai_studio": {
+      "default_model": { "name": "gemini-3-pro-preview", "display_name": "Gemini 3 Pro" },
+      "additional_visible_models": [
+        { "name": "gemini-3-flash-preview", "display_name": "Gemini 3 Flash" }
+      ]
+    },
+    "openai_codex": {
+      "default_model": { "name": "gpt-5.4", "display_name": "GPT-5.4" },
+      "additional_visible_models": [
+        { "name": "o4-mini", "display_name": "o4-mini" },
+        { "name": "o3", "display_name": "o3" }
+      ]
+    },
+    "claude_code_cli": {
+      "default_model": { "name": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6" },
+      "additional_visible_models": [
+        { "name": "claude-opus-4-6", "display_name": "Claude Opus 4.6" },
+        { "name": "claude-haiku-4-5", "display_name": "Claude Haiku 4.5" }
+      ]
     }
   }
 }
