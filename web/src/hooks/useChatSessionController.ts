@@ -372,6 +372,68 @@ export default function useChatSessionController({
     // This effect should only run when existingChatSessionId or persona ID changes
   ]);
 
+  // Refresh the currently-visible chat session whenever this tab regains
+  // visibility. The backend reserves an assistant message row (with the
+  // "Response was terminated prior to completion, try regenerating."
+  // placeholder) at stream start and only writes the real text on
+  // completion — so a tab that loaded the session before/during another
+  // tab's stream sees stale placeholder text until the user refreshes.
+  // This handler does the refresh automatically on focus, but stays out
+  // of the way during this tab's own in-progress streaming so we don't
+  // race the local stream.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== "visible") return;
+      const sessionId = chatSessionIdRef.current;
+      if (!sessionId) return;
+
+      const session = useChatSessionStore.getState().sessions.get(sessionId);
+      const liveStates = new Set(["streaming", "loading", "toolBuilding"]);
+      if (session?.chatState && liveStates.has(session.chatState)) {
+        // Don't clobber an in-progress stream owned by THIS tab.
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/chat/get-chat-session/${sessionId}`
+        );
+        if (!response.ok) return;
+        const fresh = (await response.json()) as BackendChatSession;
+
+        // Defensive: another tab/click may have switched the session
+        // out from under us by the time the fetch resolves.
+        if (chatSessionIdRef.current !== sessionId) return;
+
+        // Re-check streaming state after the await — same reason.
+        const stillSession = useChatSessionStore
+          .getState()
+          .sessions.get(sessionId);
+        if (
+          stillSession?.chatState &&
+          liveStates.has(stillSession.chatState)
+        ) {
+          return;
+        }
+
+        const newMessageMap = processRawChatHistory(
+          fresh.messages,
+          fresh.packets
+        );
+        updateSessionAndMessageTree(sessionId, newMessageMap);
+      } catch {
+        // Best-effort — silently swallow on transient network errors.
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [updateSessionAndMessageTree]);
+
   const onMessageSelection = useCallback(
     (nodeId: number) => {
       updateCurrentSelectedNodeForDocDisplay(nodeId);
