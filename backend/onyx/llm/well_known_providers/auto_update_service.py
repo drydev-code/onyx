@@ -8,6 +8,8 @@ are managed centrally via a GitHub-hosted JSON file. In Auto mode:
 - Admin only needs to provide API credentials
 """
 
+import json
+import pathlib
 from datetime import datetime
 
 import httpx
@@ -18,6 +20,9 @@ from onyx.configs.app_configs import AUTO_LLM_CONFIG_URL
 from onyx.db.llm import fetch_auto_mode_providers
 from onyx.db.llm import sync_auto_mode_models
 from onyx.llm.well_known_providers.auto_update_models import LLMRecommendations
+from onyx.llm.well_known_providers.dynamic_recommendations import (
+    apply_dynamic_recommendations,
+)
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -47,6 +52,14 @@ def _set_cached_last_updated_at(updated_at: datetime) -> None:
         logger.warning(f"Failed to set cached last_updated_at: {e}")
 
 
+def load_bundled_recommendations() -> LLMRecommendations:
+    """Load the recommendations JSON file bundled with the backend."""
+    json_path = pathlib.Path(__file__).parent / "recommended-models.json"
+    with open(json_path, "r") as f:
+        json_config = json.load(f)
+    return LLMRecommendations.model_validate(json_config)
+
+
 def fetch_llm_recommendations_from_github(
     timeout: float = 30.0,
 ) -> LLMRecommendations | None:
@@ -72,6 +85,35 @@ def fetch_llm_recommendations_from_github(
     except Exception as e:
         logger.error(f"Error parsing LLM config: {e}")
         return None
+
+
+def get_merged_recommendations() -> LLMRecommendations:
+    """Return bundled recommendations merged with the remote GitHub config.
+
+    GitHub takes precedence on conflicts so upstream can override bundled
+    defaults, but bundled providers (e.g. zai, google_ai_studio) survive when
+    upstream omits them. If the GitHub fetch fails or AUTO_LLM_CONFIG_URL is
+    unset, the bundled config is used alone.
+
+    After merging, dynamic per-provider detection (e.g. latest Gemini per tier
+    pulled from litellm) is applied so visible model lists stay current
+    without hand-editing the JSON.
+    """
+    bundled = load_bundled_recommendations()
+    remote = fetch_llm_recommendations_from_github()
+
+    if remote is None:
+        merged = bundled
+    else:
+        merged_providers = dict(bundled.providers)
+        merged_providers.update(remote.providers)
+        merged = LLMRecommendations(
+            version=remote.version,
+            updated_at=remote.updated_at,
+            providers=merged_providers,
+        )
+
+    return apply_dynamic_recommendations(merged)
 
 
 def sync_llm_models_from_github(
@@ -102,16 +144,15 @@ def sync_llm_models_from_github(
         logger.debug("No providers in Auto mode found")
         return {}
 
-    # Fetch config from GitHub
-    config = fetch_llm_recommendations_from_github()
-    if not config:
-        logger.warning("Failed to fetch GitHub config")
-        return {}
+    # Build the merged config (bundled + GitHub). Bundled gives us coverage for
+    # providers that the upstream JSON doesn't know about (zai, google_ai_studio,
+    # openai_codex, claude_code_cli); GitHub overrides on conflicts.
+    config = get_merged_recommendations()
 
     # Skip if we've already processed this version (unless forced)
     last_updated_at = _get_cached_last_updated_at()
     if not force and last_updated_at and config.updated_at <= last_updated_at:
-        logger.debug("GitHub config unchanged, skipping sync")
+        logger.debug("LLM recommendations unchanged, skipping sync")
         _set_cached_last_updated_at(config.updated_at)
         return {}
 

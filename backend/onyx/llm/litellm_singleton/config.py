@@ -154,7 +154,100 @@ def load_model_metadata_enrichments() -> None:
         logger.error(f"Failed to load model metadata enrichments: {e}")
 
 
+def register_zai_models() -> None:
+    """Register Z.AI GLM models with their capabilities in LiteLLM.
+
+    Adds entries to litellm.model_cost directly (register_model may not
+    persist) under multiple key formats so lookups always succeed.
+    """
+    zai_models = {
+        "glm-5.1": {
+            "max_tokens": 16384,
+            "max_input_tokens": 128000,
+            "max_output_tokens": 16384,
+            "supports_function_calling": True,
+            "supports_vision": True,
+            "supports_reasoning": True,
+            "litellm_provider": "openai",
+        },
+        "glm-5-turbo": {
+            "max_tokens": 16384,
+            "max_input_tokens": 128000,
+            "max_output_tokens": 16384,
+            "supports_function_calling": True,
+            "supports_vision": False,
+            "supports_reasoning": False,
+            "litellm_provider": "openai",
+        },
+        "glm-5v-turbo": {
+            "max_tokens": 16384,
+            "max_input_tokens": 128000,
+            "max_output_tokens": 16384,
+            "supports_function_calling": True,
+            "supports_vision": True,
+            "supports_reasoning": False,
+            "litellm_provider": "openai",
+        },
+    }
+
+    # Register under multiple key formats so litellm lookups always work
+    for model_name, info in zai_models.items():
+        for prefix in ["", "zai/", "openai/"]:
+            litellm.model_cost[f"{prefix}{model_name}"] = info
+
+    # Also use register_model for any version that supports it
+    try:
+        litellm.register_model(
+            model_cost={f"zai/{k}": v for k, v in zai_models.items()}
+        )
+    except Exception:
+        pass  # Direct model_cost insertion is the primary mechanism
+
+
+def register_claude_code_cli_models() -> None:
+    """Register Claude Code CLI models so get_max_input_tokens() works.
+
+    These models are NOT routed through LiteLLM (they use subprocess),
+    but registering them here ensures correct token limit lookups.
+    """
+    cli_models = {
+        "claude-opus-4-6": {
+            "max_tokens": 32000,
+            "max_input_tokens": 200000,
+            "max_output_tokens": 32000,
+            "supports_function_calling": True,
+            "supports_vision": True,
+            "supports_reasoning": True,
+            "litellm_provider": "anthropic",
+        },
+        "claude-sonnet-4-6": {
+            "max_tokens": 16384,
+            "max_input_tokens": 200000,
+            "max_output_tokens": 16384,
+            "supports_function_calling": True,
+            "supports_vision": True,
+            "supports_reasoning": True,
+            "litellm_provider": "anthropic",
+        },
+        "claude-haiku-4-5": {
+            "max_tokens": 8192,
+            "max_input_tokens": 200000,
+            "max_output_tokens": 8192,
+            "supports_function_calling": True,
+            "supports_vision": True,
+            "supports_reasoning": False,
+            "litellm_provider": "anthropic",
+        },
+    }
+
+    for model_name, info in cli_models.items():
+        for prefix in ["", "claude_code_cli/", "anthropic/"]:
+            litellm.model_cost[f"{prefix}{model_name}"] = info
+
+
 def initialize_litellm() -> None:
     configure_litellm_settings()
     register_ollama_models()
+    register_zai_models()
+    register_claude_code_cli_models()
     load_model_metadata_enrichments()

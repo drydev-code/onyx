@@ -333,6 +333,38 @@ def get_llm(
     if provider_extra_headers:
         extra_headers.update(provider_extra_headers)
 
+    # OpenAI Codex with OAuth tokens must use the Codex CLI subprocess
+    # because ChatGPT session tokens don't work with api.openai.com
+    # (no API billing). When using a standard API key, fall through to LiteLLM.
+    if provider == LlmProviderNames.OPENAI_CODEX and custom_config:
+        from onyx.llm.well_known_providers.constants import (
+            OPENAI_CODEX_ACCESS_TOKEN_KEY,
+        )
+
+        if custom_config.get(OPENAI_CODEX_ACCESS_TOKEN_KEY):
+            from onyx.llm.codex_cli import CodexCLI
+
+            return CodexCLI(
+                model_name=model,
+                temperature=temperature,
+                custom_config=custom_config,
+                timeout=timeout,
+                max_input_tokens=max_input_tokens,
+            )
+
+    # Claude Code CLI uses a subprocess-based LLM, not LiteLLM
+    if provider == LlmProviderNames.CLAUDE_CODE_CLI:
+        from onyx.llm.claude_code_cli import ClaudeCodeCLI
+
+        return ClaudeCodeCLI(
+            model_name=model,
+            api_key=api_key,
+            temperature=temperature,
+            custom_config=custom_config,
+            timeout=timeout,
+            max_input_tokens=max_input_tokens,
+        )
+
     return LitellmLLM(
         model_provider=provider,
         model_name=model,
