@@ -32,10 +32,8 @@ import {
   OpenRouterFetchParams,
   LiteLLMProxyFetchParams,
   BifrostFetchParams,
-  OpenAICompatibleFetchParams,
-  OpenAICompatibleModelResponse,
 } from "@/interfaces/llm";
-import { SvgAws, SvgBifrost, SvgOpenrouter, SvgPlug } from "@opal/icons";
+import { SvgAws, SvgBifrost, SvgOpenrouter } from "@opal/icons";
 
 // Aggregator providers that host models from multiple vendors
 export const AGGREGATOR_PROVIDERS = new Set([
@@ -46,7 +44,6 @@ export const AGGREGATOR_PROVIDERS = new Set([
   "lm_studio",
   "litellm_proxy",
   "bifrost",
-  "openai_compatible",
   "vertex_ai",
 ]);
 
@@ -79,13 +76,15 @@ export const getProviderIcon = (
     qwen: QwenIcon,
     qwq: QwenIcon,
     zai: ZAIIcon,
+    google_ai_studio: GeminiIcon,
+    claude_code_cli: AnthropicIcon,
+    openai_codex: OpenAISVG,
     // Cloud providers - use AWS icon for Bedrock
     bedrock: SvgAws,
     bedrock_converse: SvgAws,
     openrouter: SvgOpenrouter,
     litellm_proxy: LiteLLMIcon,
     bifrost: SvgBifrost,
-    openai_compatible: SvgPlug,
     vertex_ai: GeminiIcon,
   };
 
@@ -416,64 +415,6 @@ export const fetchBifrostModels = async (
 };
 
 /**
- * Fetches models from a generic OpenAI-compatible server.
- * Uses snake_case params to match API structure.
- */
-export const fetchOpenAICompatibleModels = async (
-  params: OpenAICompatibleFetchParams
-): Promise<{ models: ModelConfiguration[]; error?: string }> => {
-  const apiBase = params.api_base;
-  if (!apiBase) {
-    return { models: [], error: "API Base is required" };
-  }
-
-  try {
-    const response = await fetch(
-      "/api/admin/llm/openai-compatible/available-models",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          api_base: apiBase,
-          api_key: params.api_key,
-          provider_name: params.provider_name,
-        }),
-        signal: params.signal,
-      }
-    );
-
-    if (!response.ok) {
-      let errorMessage = "Failed to fetch models";
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.detail || errorData.message || errorMessage;
-      } catch {
-        // ignore JSON parsing errors
-      }
-      return { models: [], error: errorMessage };
-    }
-
-    const data: OpenAICompatibleModelResponse[] = await response.json();
-    const models: ModelConfiguration[] = data.map((modelData) => ({
-      name: modelData.name,
-      display_name: modelData.display_name,
-      is_visible: true,
-      max_input_tokens: modelData.max_input_tokens,
-      supports_image_input: modelData.supports_image_input,
-      supports_reasoning: modelData.supports_reasoning,
-    }));
-
-    return { models };
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    return { models: [], error: errorMessage };
-  }
-};
-
-/**
  * Fetches LiteLLM Proxy models directly without any form state dependencies.
  * Uses snake_case params to match API structure.
  */
@@ -593,13 +534,6 @@ export const fetchModels = async (
         provider_name: formValues.name,
         signal,
       });
-    case LLMProviderName.OPENAI_COMPATIBLE:
-      return fetchOpenAICompatibleModels({
-        api_base: formValues.api_base,
-        api_key: formValues.api_key,
-        provider_name: formValues.name,
-        signal,
-      });
     default:
       return { models: [], error: `Unknown provider: ${providerName}` };
   }
@@ -614,7 +548,6 @@ export function canProviderFetchModels(providerName?: string) {
     case LLMProviderName.OPENROUTER:
     case LLMProviderName.LITELLM_PROXY:
     case LLMProviderName.BIFROST:
-    case LLMProviderName.OPENAI_COMPATIBLE:
       return true;
     default:
       return false;
