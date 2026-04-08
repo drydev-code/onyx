@@ -6,7 +6,7 @@ import { InfoIcon } from "@/components/icons/icons";
 import Text from "@/refresh-components/texts/Text";
 import { Section } from "@/layouts/general-layouts";
 import * as SettingsLayouts from "@/layouts/settings-layouts";
-import { Content, Card } from "@opal/layouts";
+import { Content, CardHeaderLayout } from "@opal/layouts";
 import useSWR from "swr";
 import { errorHandlingFetcher, FetchError } from "@/lib/fetcher";
 import { SWR_KEYS } from "@/lib/swr-keys";
@@ -275,7 +275,7 @@ function ProviderCard({
               : undefined
         }
       >
-        <Card.Header
+        <CardHeaderLayout
           sizePreset="main-ui"
           variant="section"
           icon={icon}
@@ -1309,7 +1309,33 @@ export default function WebSearchPage() {
                     </>
                   ),
                 }
-              : undefined
+              : selectedProviderType === "glm"
+                ? {
+                    label: "Transport",
+                    value: searchModal.configValue || "rest",
+                    onChange: (value) =>
+                      dispatchSearchModal({ type: "SET_CONFIG_VALUE", value }),
+                    placeholder: "rest",
+                    options: [
+                      { value: "rest", label: "REST API (recommended, uses pay-as-you-go)" },
+                      { value: "mcp", label: "MCP (uses subscription quota)" },
+                    ],
+                    description: (
+                      <>
+                        REST is recommended. MCP uses subscription quota but has a{" "}
+                        <a
+                          href="https://github.com/zai-org/GLM-5/issues/36"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
+                          known billing bug
+                        </a>
+                        .
+                      </>
+                    ),
+                  }
+                : undefined
         }
         helperMessage={
           searchModal.message?.kind === "error" ? (

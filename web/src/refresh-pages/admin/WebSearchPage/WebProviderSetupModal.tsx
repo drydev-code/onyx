@@ -31,6 +31,7 @@ export type WebProviderSetupModalProps = {
     placeholder: string;
     description?: ReactNode;
     showFirst?: boolean;
+    options?: { value: string; label: string }[];
   };
   helperMessage: ReactNode;
   helperClass: string;
@@ -93,13 +94,29 @@ export const WebProviderSetupModal = memo(
               >
                 <FormField.Label>{optionalField.label}</FormField.Label>
                 <FormField.Control asChild>
-                  <InputTypeIn
-                    placeholder={optionalField.placeholder}
-                    value={optionalField.value}
-                    onChange={(event) =>
-                      optionalField.onChange(event.target.value)
-                    }
-                  />
+                  {optionalField.options ? (
+                    <select
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={optionalField.value}
+                      onChange={(event) =>
+                        optionalField.onChange(event.target.value)
+                      }
+                    >
+                      {optionalField.options.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <InputTypeIn
+                      placeholder={optionalField.placeholder}
+                      value={optionalField.value}
+                      onChange={(event) =>
+                        optionalField.onChange(event.target.value)
+                      }
+                    />
+                  )}
                 </FormField.Control>
                 {optionalField.description && (
                   <FormField.Description>
@@ -191,13 +208,29 @@ export const WebProviderSetupModal = memo(
               >
                 <FormField.Label>{optionalField.label}</FormField.Label>
                 <FormField.Control asChild>
-                  <InputTypeIn
-                    placeholder={optionalField.placeholder}
-                    value={optionalField.value}
-                    onChange={(event) =>
-                      optionalField.onChange(event.target.value)
-                    }
-                  />
+                  {optionalField.options ? (
+                    <select
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={optionalField.value}
+                      onChange={(event) =>
+                        optionalField.onChange(event.target.value)
+                      }
+                    >
+                      {optionalField.options.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <InputTypeIn
+                      placeholder={optionalField.placeholder}
+                      value={optionalField.value}
+                      onChange={(event) =>
+                        optionalField.onChange(event.target.value)
+                      }
+                    />
+                  )}
                 </FormField.Control>
                 {optionalField.description && (
                   <FormField.Description>

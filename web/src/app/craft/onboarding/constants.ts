@@ -71,6 +71,9 @@ export const RECOMMENDED_BUILD_MODELS = {
     { provider: "openai", modelName: "gpt-5.2" },
     { provider: "openai", modelName: "gpt-5.1-codex" },
     { provider: "openrouter", modelName: "minimax/minimax-m2.1" },
+    { provider: "zai", modelName: "glm-5.1" },
+    { provider: "openai_codex", modelName: "gpt-5.4" },
+    { provider: "claude_code_cli", modelName: "claude-opus-4-6" },
   ],
 } as const;
 
@@ -181,6 +184,41 @@ export const BUILD_MODE_PROVIDERS: BuildModeProvider[] = [
     apiKeyPlaceholder: "sk-or-...",
     apiKeyUrl: "https://openrouter.ai/keys",
     apiKeyLabel: "OpenRouter Dashboard",
+  },
+  {
+    key: "zai",
+    label: "Z.AI",
+    providerName: "zai",
+    models: [
+      { name: "glm-5.1", label: "GLM 5.1", recommended: true },
+      { name: "glm-5-turbo", label: "GLM 5 Turbo" },
+      { name: "glm-5v-turbo", label: "GLM 5V Turbo" },
+    ],
+    apiKeyPlaceholder: "zai-...",
+    apiKeyUrl: "https://open.z.ai/",
+    apiKeyLabel: "Z.AI Dashboard",
+  },
+  {
+    key: "openai_codex",
+    label: "OpenAI Codex",
+    providerName: "openai_codex",
+    models: [
+      { name: "gpt-5.4", label: "GPT-5.4", recommended: true },
+      { name: "gpt-5.2", label: "GPT-5.2" },
+      { name: "o4-mini", label: "o4-mini" },
+    ],
+    apiKeyPlaceholder: "sk-...",
+    apiKeyUrl: "https://platform.openai.com/api-keys",
+    apiKeyLabel: "OpenAI Dashboard",
+  },
+  {
+    key: "claude_code_cli",
+    label: "Claude Code CLI",
+    providerName: "claude_code_cli",
+    models: [
+      { name: "claude-opus-4-6", label: "Claude Opus 4.6", recommended: true },
+      { name: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+    ],
   },
 ];
 
