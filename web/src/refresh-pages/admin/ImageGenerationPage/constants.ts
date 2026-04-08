@@ -74,20 +74,70 @@ export const IMAGE_PROVIDER_GROUPS: ProviderGroup[] = [
     name: "Google Cloud Vertex AI",
     providers: [
       {
-        image_provider_id: "gemini-2.5-flash-image",
-        model_name: "gemini-2.5-flash-image",
+        image_provider_id: "gemini-3.1-flash-image-preview",
+        model_name: "gemini-3.1-flash-image-preview",
         provider_name: "vertex_ai",
-        title: "Gemini 2.5 Flash Image",
+        title: "Gemini 3.1 Flash Image (Nano Banana 2)",
         description:
-          "Gemini 2.5 Flash Image (Nano Banana) model is designed for speed and efficiency.",
+          "Nano Banana 2 combines Nano Banana Pro quality with Flash speed, up to 4K resolution.",
       },
       {
         image_provider_id: "gemini-3-pro-image-preview",
         model_name: "gemini-3-pro-image-preview",
         provider_name: "vertex_ai",
-        title: "Gemini 3 Pro Image Preview",
+        title: "Gemini 3 Pro Image Preview (Nano Banana Pro)",
         description:
-          "Gemini 3 Pro Image Preview (Nano Banana Pro) is designed for professional asset production.",
+          "Nano Banana Pro is designed for professional asset production with improved text rendering.",
+      },
+      {
+        image_provider_id: "gemini-2.5-flash-image",
+        model_name: "gemini-2.5-flash-image",
+        provider_name: "vertex_ai",
+        title: "Gemini 2.5 Flash Image (Nano Banana)",
+        description:
+          "Gemini 2.5 Flash Image (Nano Banana) model is designed for speed and efficiency.",
+      },
+    ],
+  },
+  {
+    name: "Google AI Studio",
+    providers: [
+      {
+        image_provider_id: "aistudio_gemini_3_1_flash_image",
+        model_name: "gemini-3.1-flash-image-preview",
+        provider_name: "google_ai_studio",
+        title: "Gemini 3.1 Flash Image (Nano Banana 2)",
+        description:
+          "Nano Banana 2 via Google AI Studio. Combines Nano Banana Pro quality with Flash speed, up to 4K resolution.",
+      },
+      {
+        image_provider_id: "aistudio_gemini_3_pro_image",
+        model_name: "gemini-3-pro-image-preview",
+        provider_name: "google_ai_studio",
+        title: "Gemini 3 Pro Image Preview (Nano Banana Pro)",
+        description:
+          "Nano Banana Pro via Google AI Studio. Designed for professional asset production with improved text rendering.",
+      },
+      {
+        image_provider_id: "aistudio_gemini_2_5_flash_image",
+        model_name: "gemini-2.5-flash-image",
+        provider_name: "google_ai_studio",
+        title: "Gemini 2.5 Flash Image (Nano Banana)",
+        description:
+          "Gemini 2.5 Flash Image via Google AI Studio API key. Fast and efficient image generation.",
+      },
+    ],
+  },
+  {
+    name: "ImageRouter",
+    providers: [
+      {
+        image_provider_id: "imagerouter_custom",
+        model_name: "", // User specifies any model name
+        provider_name: "imagerouter",
+        title: "ImageRouter",
+        description:
+          "Access 80+ image generation models with one API key via ImageRouter.co. Specify any model name supported by the ImageRouter API.",
       },
     ],
   },
