@@ -6,6 +6,8 @@ This is NOT a LiteLLM-based provider; it uses subprocess directly.
 
 import json
 import os
+import pwd
+import stat
 import subprocess
 import tempfile
 import threading
@@ -246,6 +248,38 @@ class ClaudeCodeCLI(LLM):
         # Pass api_key when it is set and not the placeholder value
         return bool(self._api_key and self._api_key != "not-required")
 
+    def _drop_privileges_target(self) -> tuple[int, int, str, str] | None:
+        """Resolve the user we should drop privileges to before invoking
+        the CLI, when this process is running as root.
+
+        Claude Code CLI refuses ``--dangerously-skip-permissions`` when
+        invoked as root for security reasons; in container deployments
+        the api_server runs as root but a non-root ``onyx`` user is
+        baked into the image. Returns ``(uid, gid, username, home)`` of
+        that user, or ``None`` if we are not root or the user does not
+        exist.
+        """
+        try:
+            if os.geteuid() != 0:
+                return None
+        except AttributeError:
+            return None  # non-POSIX
+        try:
+            pw = pwd.getpwnam("onyx")
+        except KeyError:
+            return None
+        return pw.pw_uid, pw.pw_gid, pw.pw_name, pw.pw_dir
+
+    def _subprocess_privilege_kwargs(self) -> dict[str, Any]:
+        """Extra subprocess kwargs that drop the child to the ``onyx``
+        user when we're root. Empty dict on non-root or non-POSIX hosts.
+        """
+        target = self._drop_privileges_target()
+        if target is None:
+            return {}
+        uid, gid, _, _ = target
+        return {"user": uid, "group": gid}
+
     def _build_env(self) -> dict[str, str] | None:
         """Build environment dict for subprocess calls.
 
@@ -253,15 +287,31 @@ class ClaudeCodeCLI(LLM):
         custom_config, sets CLAUDE_CODE_OAUTH_TOKEN so the CLI
         authenticates via OAuth instead of an API key.
 
+        When this process is root and the child will drop privileges to
+        ``onyx``, also rewrites HOME/USER/LOGNAME so the CLI looks up
+        its credentials under that user's home directory instead of
+        ``/root``.
+
         Returns None when no environment modifications are needed
         (subprocess inherits the parent environment by default).
         """
+        env: dict[str, str] | None = None
+
         oauth_token = self._custom_config.get(CLAUDE_CODE_OAUTH_TOKEN_KEY)
         if self._auth_mode == "oauth" and oauth_token:
             env = os.environ.copy()
             env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
-            return env
-        return None
+
+        target = self._drop_privileges_target()
+        if target is not None:
+            _, _, username, home = target
+            if env is None:
+                env = os.environ.copy()
+            env["HOME"] = home
+            env["USER"] = username
+            env["LOGNAME"] = username
+
+        return env
 
     def _build_mcp_config(self) -> dict:
         """Build MCP config from Onyx's configured MCP servers.
@@ -301,6 +351,10 @@ class ClaudeCodeCLI(LLM):
         try:
             with os.fdopen(fd, "w") as f:
                 json.dump(merged, f)
+            # tempfile.mkstemp creates 0o600; if the CLI subprocess runs
+            # as a different user (we drop root → onyx), it would not be
+            # readable. Relax to 0o644 so the dropped child can open it.
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
         except Exception:
             os.unlink(path)
             raise
@@ -368,6 +422,7 @@ class ClaudeCodeCLI(LLM):
             cmd.extend(["--mcp-config", mcp_config_path])
 
         env = self._build_env()
+        priv_kwargs = self._subprocess_privilege_kwargs()
 
         try:
             result = subprocess.run(
@@ -377,6 +432,7 @@ class ClaudeCodeCLI(LLM):
                 text=True,
                 timeout=timeout,
                 env=env,
+                **priv_kwargs,
             )
         except subprocess.TimeoutExpired:
             raise TimeoutError(
@@ -407,8 +463,22 @@ class ClaudeCodeCLI(LLM):
 
         try:
             data = json.loads(raw_output)
-            # JSON format returns content blocks array
-            content_blocks = data if isinstance(data, list) else data.get("content", [])
+
+            # `claude --print --output-format json` emits a single envelope:
+            #   {"type":"result","subtype":"success","is_error":false,
+            #    "result":"...assistant text...","usage":{...},"stop_reason":...}
+            # Older / streaming-style payloads instead carry a `content`
+            # blocks array (text + thinking blocks). Support both shapes —
+            # historically only the blocks shape was parsed, which left
+            # `response_text` empty for the common --output-format json path
+            # and tripped EmptyLLMResponseError downstream.
+            if isinstance(data, list):
+                content_blocks = data
+            elif isinstance(data, dict):
+                content_blocks = data.get("content") or []
+            else:
+                content_blocks = []
+
             for block in content_blocks:
                 if not isinstance(block, dict):
                     continue
@@ -417,23 +487,35 @@ class ClaudeCodeCLI(LLM):
                 elif block.get("type") == "text":
                     response_text += block.get("text", "")
 
-            # Extract usage if available
-            usage_data = data.get("usage") if isinstance(data, dict) else None
-            if usage_data:
-                usage = Usage(
-                    prompt_tokens=usage_data.get("input_tokens", 0),
-                    completion_tokens=usage_data.get("output_tokens", 0),
-                    total_tokens=(
-                        usage_data.get("input_tokens", 0)
-                        + usage_data.get("output_tokens", 0)
-                    ),
-                    cache_creation_input_tokens=usage_data.get(
-                        "cache_creation_input_tokens", 0
-                    ),
-                    cache_read_input_tokens=usage_data.get(
-                        "cache_read_input_tokens", 0
-                    ),
-                )
+            if isinstance(data, dict):
+                # Result envelope path: prefer the explicit `result` string
+                # when no content blocks were present.
+                if not response_text and data.get("type") == "result":
+                    if data.get("is_error"):
+                        raise RuntimeError(
+                            f"Claude Code CLI reported error: {data.get('result') or data.get('subtype') or 'unknown'}"
+                        )
+                    result_text = data.get("result")
+                    if isinstance(result_text, str):
+                        response_text = result_text
+
+                # Extract usage if available
+                usage_data = data.get("usage")
+                if usage_data:
+                    usage = Usage(
+                        prompt_tokens=usage_data.get("input_tokens", 0),
+                        completion_tokens=usage_data.get("output_tokens", 0),
+                        total_tokens=(
+                            usage_data.get("input_tokens", 0)
+                            + usage_data.get("output_tokens", 0)
+                        ),
+                        cache_creation_input_tokens=usage_data.get(
+                            "cache_creation_input_tokens", 0
+                        ),
+                        cache_read_input_tokens=usage_data.get(
+                            "cache_read_input_tokens", 0
+                        ),
+                    )
         except (json.JSONDecodeError, TypeError):
             # Fallback: treat entire output as text
             response_text = raw_output
@@ -510,6 +592,7 @@ class ClaudeCodeCLI(LLM):
             cmd.extend(["--mcp-config", mcp_config_path])
 
         env = self._build_env()
+        priv_kwargs = self._subprocess_privilege_kwargs()
 
         try:
             proc = subprocess.Popen(
@@ -519,6 +602,7 @@ class ClaudeCodeCLI(LLM):
                 stderr=subprocess.PIPE,
                 text=True,
                 env=env,
+                **priv_kwargs,
             )
             # Write prompt to stdin and close it
             assert proc.stdin is not None

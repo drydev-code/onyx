@@ -243,10 +243,18 @@ export default function useChatSessionController({
       // Update message history except for edge where where
       // last message is an error and we're on a new chat.
       // This corresponds to a "renaming" of chat, which occurs after first message
-      // stream
+      // stream.
+      //
+      // Additional carve-out: if we have NO messages currently displayed for this
+      // session, always load the fetched data — there is nothing to clobber. This
+      // covers the "first session click after page load lands on a session whose
+      // most recent assistant message errored" case (e.g. provider misconfig left
+      // the latest_child as an error message), which previously left the chat
+      // pane empty forever.
       if (
         (newMessageHistory[newMessageHistory.length - 1]?.type !== "error" ||
-          loadedSessionId != null) &&
+          loadedSessionId != null ||
+          currentChatHistory.length === 0) &&
         !(
           currentChatState == "toolBuilding" ||
           currentChatState == "streaming" ||

@@ -35,6 +35,18 @@ class WebSearchResult(BaseModel):
     def normalize_link(cls, v: str) -> str:
         return normalize_url(v)
 
+    @field_validator("published_date", mode="before")
+    @classmethod
+    def empty_string_as_none(cls, v: object) -> object:
+        # Some upstream search providers (e.g. GLM web search) return ``""``
+        # for missing dates. Pydantic 2.11+ rejects empty strings as datetime
+        # ("input is too short"), which then poisons the entire batch of
+        # results and surfaces as "Web search query ... failed". Treat blank
+        # strings as a missing value so the result still validates.
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
 
 class WebSearchProvider:
     @property
