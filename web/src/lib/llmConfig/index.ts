@@ -32,6 +32,7 @@ import LMStudioModal from "@/sections/modals/llmConfig/LMStudioModal";
 import LiteLLMProxyModal from "@/sections/modals/llmConfig/LiteLLMProxyModal";
 import BifrostModal from "@/sections/modals/llmConfig/BifrostModal";
 import OpenAICompatibleModal from "@/sections/modals/llmConfig/OpenAICompatibleModal";
+import ClaudeCodeCLIModal from "@/sections/modals/llmConfig/ClaudeCodeCLIModal";
 
 // ─── Text (LLM) providers ────────────────────────────────────────────────────
 
@@ -131,7 +132,7 @@ const PROVIDERS: Record<string, ProviderEntry> = {
     icon: SvgClaude,
     productName: "Claude Code",
     companyName: "Anthropic",
-    Modal: CustomModal,
+    Modal: ClaudeCodeCLIModal,
   },
   [LLMProviderName.CUSTOM]: {
     icon: SvgServer,
