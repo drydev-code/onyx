@@ -25,12 +25,14 @@ services:
 
   relational_db:
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
   index:
     ports:
       - "19071:19071"
       - "8081:8081"
+    environment:
+      - VESPA_IGNORE_NOT_ENOUGH_MEMORY=true
     healthcheck:
       # We use 19071 because the application server at 8010 is not ready until
       # it is activated/configured by the application.
@@ -55,7 +57,7 @@ services:
 
   cache:
     ports:
-      - "6379:6379"
+      - "6380:6379"
 
   minio:
     # use different ports to avoid conflicts with model servers
