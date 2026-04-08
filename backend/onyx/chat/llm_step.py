@@ -21,6 +21,7 @@ from onyx.configs.app_configs import PROMPT_CACHE_CHAT_HISTORY
 from onyx.configs.constants import MessageType
 from onyx.context.search.models import SearchDoc
 from onyx.file_store.models import ChatFileType
+from onyx.llm.cli_tool_bridge import emit_bridge_packets
 from onyx.llm.constants import LlmProviderNames
 from onyx.llm.interfaces import LanguageModelInput
 from onyx.llm.interfaces import LLM
@@ -1225,7 +1226,36 @@ def run_llm_step_pkt_generator(
             if delta.tool_calls:
                 yield from _close_reasoning_if_active()
 
+                cli_bridge = llm.config.cli_tool_bridge
+
                 for tool_call_delta in delta.tool_calls:
+                    tool_name = (
+                        tool_call_delta.function.name
+                        if tool_call_delta.function
+                        else None
+                    )
+                    bridge_category = (
+                        cli_bridge.get(tool_name)
+                        if cli_bridge and tool_name
+                        else None
+                    )
+                    if bridge_category:
+                        # CLI-self-executed tool: emit rich packets directly
+                        # and skip the kickoff path so the tool is not
+                        # double-executed by Onyx.
+                        arguments = (
+                            tool_call_delta.function.arguments
+                            if tool_call_delta.function
+                            else None
+                        )
+                        yield from emit_bridge_packets(
+                            category=bridge_category,
+                            tool_name=tool_name,
+                            arguments=arguments,
+                            placement=_current_placement(),
+                        )
+                        continue
+
                     # maybe_emit depends and update being called first and attaching the delta
                     _update_tool_call_with_delta(id_to_tool_call_map, tool_call_delta)
                     yield from maybe_emit_argument_delta(

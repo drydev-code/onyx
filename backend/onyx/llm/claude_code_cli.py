@@ -15,12 +15,18 @@ from collections.abc import Iterator
 from typing import Any
 
 from onyx.configs.model_configs import GEN_AI_TEMPERATURE
+from onyx.llm.cli_tool_bridge import CATEGORY_FETCH
+from onyx.llm.cli_tool_bridge import CATEGORY_FILE_READER
+from onyx.llm.cli_tool_bridge import CATEGORY_INTERNAL_SEARCH
+from onyx.llm.cli_tool_bridge import CATEGORY_INTERNET_SEARCH
 from onyx.llm.interfaces import LanguageModelInput
 from onyx.llm.interfaces import LLM
 from onyx.llm.interfaces import LLMConfig
 from onyx.llm.interfaces import LLMUserIdentity
+from onyx.llm.model_response import ChatCompletionDeltaToolCall
 from onyx.llm.model_response import Choice
 from onyx.llm.model_response import Delta
+from onyx.llm.model_response import FunctionCall
 from onyx.llm.model_response import Message
 from onyx.llm.model_response import ModelResponse
 from onyx.llm.model_response import ModelResponseStream
@@ -31,6 +37,9 @@ from onyx.llm.models import ToolChoiceOptions
 from onyx.llm.well_known_providers.constants import CLAUDE_CODE_AUTH_MODE_KEY
 from onyx.llm.well_known_providers.constants import CLAUDE_CODE_CLI_PATH_KEY
 from onyx.llm.well_known_providers.constants import CLAUDE_CODE_CLI_PROVIDER_NAME
+from onyx.llm.well_known_providers.constants import (
+    CLAUDE_CODE_DISABLE_BUILTIN_TOOLS_KEY,
+)
 from onyx.llm.well_known_providers.constants import CLAUDE_CODE_OAUTH_TOKEN_KEY
 from onyx.utils.logger import setup_logger
 
@@ -38,6 +47,76 @@ logger = setup_logger()
 
 _DEFAULT_CLI_PATH = "claude"
 _DEFAULT_TIMEOUT = 300
+
+# Comma-separated list of Claude built-in tools to disable via
+# --disallowedTools when the disable-builtin-tools toggle is on (the
+# default). WebSearch and WebFetch are replaced by the Onyx MCP
+# server's own search/fetch tools (auto-injected by
+# mcp_config_builder.py), so disabling them avoids duplicate/divergent
+# results. The agentic tools (Read, Bash, Grep, Glob, Write, Edit, Task,
+# TodoWrite) stay enabled because Claude needs them to be useful and no
+# Onyx equivalent exists.
+_DISABLED_BUILTIN_TOOLS = "WebSearch,WebFetch"
+
+# Icon map for rendering built-in Claude tools inside the Thinking panel
+# as reasoning markdown. Bridged tools (Onyx MCP and Claude's own
+# WebSearch/WebFetch/Read) skip this path entirely and render as chip UI
+# via cli_tool_bridge.py.
+_TOOL_ICON_MAP: dict[str, str] = {
+    "WebSearch": "🔍",
+    "WebFetch": "🌐",
+    "Read": "📖",
+    "Write": "📝",
+    "Edit": "✏️",
+    "Bash": "💻",
+    "Grep": "🔎",
+    "Glob": "📁",
+    "Task": "🤖",
+    "TodoWrite": "✅",
+}
+
+# Bridged (self-executed) tool name → cli_tool_bridge category. Keys are
+# the tool names Claude Code CLI surfaces in its stream-json events:
+# Claude's own built-ins use the bare PascalCase name, while MCP tools
+# arrive with the mcp__<server>__<tool> prefix. When
+# _disable_builtin_tools is on (default), WebSearch/WebFetch are blocked
+# via --disallowedTools and the Onyx MCP entries below pick up the work.
+# Admins who opt out of the disable flag can still benefit from the chip
+# UI for WebSearch/WebFetch/Read because those entries route the
+# built-ins through the bridge too.
+_CLAUDE_CODE_TOOL_BRIDGE: dict[str, str] = {
+    # Claude built-ins
+    "WebSearch": CATEGORY_INTERNET_SEARCH,
+    "WebFetch": CATEGORY_FETCH,
+    "Read": CATEGORY_FILE_READER,
+    # Onyx MCP server tools (auto-injected at mcp_config_builder.py:78-82).
+    # The mcp__<server>__<tool> prefix follows the Anthropic MCP naming
+    # convention; verify the exact key if additional Onyx MCP tools are
+    # exposed.
+    "mcp__onyx__search_indexed_documents": CATEGORY_INTERNAL_SEARCH,
+}
+
+
+def _format_builtin_tool_markdown(tool_name: str, args_json: str) -> str:
+    """Structured markdown block for a non-bridged (built-in) tool use.
+
+    Bridged tools use the chip UI path via ``cli_tool_bridge.py``; this
+    helper is only used for Claude's internal agentic tools (Bash, Grep,
+    Glob, Write, Edit, Task, TodoWrite, ...) that we surface in the
+    Thinking panel via ``reasoning_content`` markdown.
+    """
+    icon = _TOOL_ICON_MAP.get(tool_name, "🔧")
+    pretty = (args_json or "{}").strip() or "{}"
+    try:
+        parsed = json.loads(args_json) if args_json else {}
+        pretty = json.dumps(parsed, indent=2)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return (
+        f"\n\n---\n\n"
+        f"### {icon} `{tool_name}`\n\n"
+        f"```json\n{pretty}\n```\n"
+    )
 
 
 def _messages_to_prompt(prompt: LanguageModelInput) -> str:
@@ -149,6 +228,16 @@ class ClaudeCodeCLI(LLM):
         self._max_input_tokens = max_input_tokens
         self._cli_path = self._custom_config.get(CLAUDE_CODE_CLI_PATH_KEY, _DEFAULT_CLI_PATH)
         self._auth_mode = self._custom_config.get(CLAUDE_CODE_AUTH_MODE_KEY, "api_key")
+        # Default ON: disable Claude's built-in WebSearch/WebFetch so the
+        # Onyx MCP server's own tools (injected via --mcp-config) handle
+        # web search/fetch instead. Admins can opt out by setting this
+        # key to "false" in the provider's custom_config.
+        self._disable_builtin_tools = (
+            self._custom_config.get(
+                CLAUDE_CODE_DISABLE_BUILTIN_TOOLS_KEY, "true"
+            ).lower()
+            != "false"
+        )
 
     def _should_pass_api_key(self) -> bool:
         """Return True if we should pass --api-key to the CLI."""
@@ -225,6 +314,7 @@ class ClaudeCodeCLI(LLM):
             temperature=self._temperature,
             custom_config=self._custom_config,
             max_input_tokens=self._max_input_tokens,
+            cli_tool_bridge=_CLAUDE_CODE_TOOL_BRIDGE or None,
         )
 
     def invoke(
@@ -256,10 +346,14 @@ class ClaudeCodeCLI(LLM):
         cmd = [
             self._cli_path,
             "--print",
+            "--dangerously-skip-permissions",
             "--output-format", "json",
             "--model", self._model_name,
             "-p", "-",  # read prompt from stdin
         ]
+
+        if self._disable_builtin_tools:
+            cmd.extend(["--disallowedTools", _DISABLED_BUILTIN_TOOLS])
 
         if self._should_pass_api_key():
             cmd.extend(["--api-key", self._api_key])  # type: ignore[arg-type]
@@ -390,12 +484,16 @@ class ClaudeCodeCLI(LLM):
         cmd = [
             self._cli_path,
             "--print",
+            "--dangerously-skip-permissions",
             "--verbose",
             "--output-format", "stream-json",
             "--include-partial-messages",
             "--model", self._model_name,
             "-p", "-",  # read prompt from stdin
         ]
+
+        if self._disable_builtin_tools:
+            cmd.extend(["--disallowedTools", _DISABLED_BUILTIN_TOOLS])
 
         if self._should_pass_api_key():
             cmd.extend(["--api-key", self._api_key])  # type: ignore[arg-type]
@@ -457,7 +555,13 @@ class ClaudeCodeCLI(LLM):
 
         # Track content block types by index for proper delta routing
         block_types: dict[int, str] = {}
+        # Per-index accumulators for tool_use blocks.
+        # Key = content block index, value = {"id", "name", "args_buf"}.
+        tool_use_state: dict[int, dict[str, str]] = {}
+        # Dedup marker for tool_use blocks seen in assistant snapshots.
+        snapshot_tool_ids_seen: set[str] = set()
         final_usage: Usage | None = None
+        final_stop_reason: str | None = None
         event_count = 0
         # Track cumulative text lengths PER MESSAGE for partial-message
         # deduplication.  With --include-partial-messages, the CLI emits
@@ -537,22 +641,36 @@ class ClaudeCodeCLI(LLM):
                         block_types[idx] = block_type
                         if block_type == "tool_use":
                             tool_name = block.get("name", "unknown")
-                            yield ModelResponseStream(
-                                id=response_id,
-                                created=created,
-                                choice=StreamingChoice(
-                                    index=0,
-                                    delta=Delta(
-                                        reasoning_content=(
-                                            f"\n\n**Tool: {tool_name}**\n"
+                            tool_use_state[idx] = {
+                                "id": block.get("id", f"cli_{idx}"),
+                                "name": tool_name,
+                                "args_buf": "",
+                            }
+                            if tool_name not in _CLAUDE_CODE_TOOL_BRIDGE:
+                                # Built-in agentic tool: surface an
+                                # initial reasoning header immediately.
+                                # Bridged tools wait for content_block_stop
+                                # to emit delta.tool_calls (chip UI).
+                                icon = _TOOL_ICON_MAP.get(tool_name, "🔧")
+                                yield ModelResponseStream(
+                                    id=response_id,
+                                    created=created,
+                                    choice=StreamingChoice(
+                                        index=0,
+                                        delta=Delta(
+                                            reasoning_content=(
+                                                f"\n\n---\n\n### {icon} "
+                                                f"`{tool_name}`\n\n"
+                                                f"*calling...*\n"
+                                            ),
                                         ),
                                     ),
-                                ),
-                            )
+                                )
 
                     elif inner_type == "content_block_delta":
                         delta_data = inner.get("delta", {}) or {}
                         delta_type = delta_data.get("type", "")
+                        idx = inner.get("index", 0)
                         if delta_type == "thinking_delta":
                             thinking = delta_data.get("thinking", "")
                             if thinking:
@@ -591,11 +709,66 @@ class ClaudeCodeCLI(LLM):
                                         delta=Delta(content=text),
                                     ),
                                 )
-                        # Skip signature_delta and input_json_delta
+                        elif delta_type == "input_json_delta":
+                            # Accumulate tool_use arguments. Flushed at
+                            # content_block_stop as either a bridged
+                            # delta.tool_calls or a reasoning markdown
+                            # block.
+                            partial = delta_data.get("partial_json", "")
+                            if partial and idx in tool_use_state:
+                                tool_use_state[idx]["args_buf"] += partial
+                        # signature_delta is ignored (thinking signature).
 
                     elif inner_type == "content_block_stop":
                         idx = inner.get("index", 0)
                         block_types.pop(idx, None)
+                        if idx in tool_use_state:
+                            tu = tool_use_state.pop(idx)
+                            if tu["name"] in _CLAUDE_CODE_TOOL_BRIDGE:
+                                # Bridged: yield delta.tool_calls so
+                                # llm_step's bridge emits SearchToolStart
+                                # etc. packets (chip UI).
+                                snapshot_tool_ids_seen.add(tu["id"])
+                                yield ModelResponseStream(
+                                    id=response_id,
+                                    created=created,
+                                    choice=StreamingChoice(
+                                        index=0,
+                                        delta=Delta(
+                                            tool_calls=[
+                                                ChatCompletionDeltaToolCall(
+                                                    id=tu["id"],
+                                                    index=0,
+                                                    type="function",
+                                                    function=FunctionCall(
+                                                        name=tu["name"],
+                                                        arguments=(
+                                                            tu["args_buf"]
+                                                            or "{}"
+                                                        ),
+                                                    ),
+                                                )
+                                            ],
+                                        ),
+                                    ),
+                                )
+                            else:
+                                # Built-in: emit final args as structured
+                                # reasoning markdown.
+                                yield ModelResponseStream(
+                                    id=response_id,
+                                    created=created,
+                                    choice=StreamingChoice(
+                                        index=0,
+                                        delta=Delta(
+                                            reasoning_content=(
+                                                _format_builtin_tool_markdown(
+                                                    tu["name"], tu["args_buf"]
+                                                )
+                                            ),
+                                        ),
+                                    ),
+                                )
 
                     elif inner_type == "message_delta":
                         usage_data = inner.get("usage")
@@ -616,6 +789,9 @@ class ClaudeCodeCLI(LLM):
                                     "cache_read_input_tokens", 0
                                 ),
                             )
+                        delta_info = inner.get("delta") or {}
+                        if delta_info.get("stop_reason"):
+                            final_stop_reason = delta_info["stop_reason"]
 
                     # Skip: message_stop, ping
                     continue
@@ -628,20 +804,32 @@ class ClaudeCodeCLI(LLM):
 
                     if block_type == "tool_use":
                         tool_name = block.get("name", "unknown")
-                        yield ModelResponseStream(
-                            id=response_id,
-                            created=created,
-                            choice=StreamingChoice(
-                                index=0,
-                                delta=Delta(
-                                    reasoning_content=f"\n\n**Tool: {tool_name}**\n",
+                        tool_use_state[idx] = {
+                            "id": block.get("id", f"cli_{idx}"),
+                            "name": tool_name,
+                            "args_buf": "",
+                        }
+                        if tool_name not in _CLAUDE_CODE_TOOL_BRIDGE:
+                            icon = _TOOL_ICON_MAP.get(tool_name, "🔧")
+                            yield ModelResponseStream(
+                                id=response_id,
+                                created=created,
+                                choice=StreamingChoice(
+                                    index=0,
+                                    delta=Delta(
+                                        reasoning_content=(
+                                            f"\n\n---\n\n### {icon} "
+                                            f"`{tool_name}`\n\n"
+                                            f"*calling...*\n"
+                                        ),
+                                    ),
                                 ),
-                            ),
-                        )
+                            )
 
                 elif event_type == "content_block_delta":
                     delta_data = event.get("delta", {})
                     delta_type = delta_data.get("type", "")
+                    idx = event.get("index", 0)
 
                     if delta_type == "thinking_delta":
                         thinking = delta_data.get("thinking", "")
@@ -665,11 +853,56 @@ class ClaudeCodeCLI(LLM):
                                     delta=Delta(content=text),
                                 ),
                             )
-                    # Skip signature_delta and input_json_delta
+                    elif delta_type == "input_json_delta":
+                        partial = delta_data.get("partial_json", "")
+                        if partial and idx in tool_use_state:
+                            tool_use_state[idx]["args_buf"] += partial
+                    # signature_delta is ignored (thinking signature).
 
                 elif event_type == "content_block_stop":
                     idx = event.get("index", 0)
                     block_types.pop(idx, None)
+                    if idx in tool_use_state:
+                        tu = tool_use_state.pop(idx)
+                        if tu["name"] in _CLAUDE_CODE_TOOL_BRIDGE:
+                            snapshot_tool_ids_seen.add(tu["id"])
+                            yield ModelResponseStream(
+                                id=response_id,
+                                created=created,
+                                choice=StreamingChoice(
+                                    index=0,
+                                    delta=Delta(
+                                        tool_calls=[
+                                            ChatCompletionDeltaToolCall(
+                                                id=tu["id"],
+                                                index=0,
+                                                type="function",
+                                                function=FunctionCall(
+                                                    name=tu["name"],
+                                                    arguments=(
+                                                        tu["args_buf"] or "{}"
+                                                    ),
+                                                ),
+                                            )
+                                        ],
+                                    ),
+                                ),
+                            )
+                        else:
+                            yield ModelResponseStream(
+                                id=response_id,
+                                created=created,
+                                choice=StreamingChoice(
+                                    index=0,
+                                    delta=Delta(
+                                        reasoning_content=(
+                                            _format_builtin_tool_markdown(
+                                                tu["name"], tu["args_buf"]
+                                            )
+                                        ),
+                                    ),
+                                ),
+                            )
 
                 elif event_type == "message_delta":
                     usage_data = event.get("usage")
@@ -688,6 +921,9 @@ class ClaudeCodeCLI(LLM):
                                 "cache_read_input_tokens", 0
                             ),
                         )
+                    delta_info = event.get("delta") or {}
+                    if delta_info.get("stop_reason"):
+                        final_stop_reason = delta_info["stop_reason"]
 
                 elif event_type == "result":
                     # Final result event with usage info
@@ -767,17 +1003,49 @@ class ClaudeCodeCLI(LLM):
                                 )
                         elif block_type == "tool_use":
                             tool_name = block.get("name", "unknown")
-                            tool_id = block.get("id", "")
-                            # Only yield once per tool_use block (keyed by id)
-                            if tool_id not in block_types:
-                                block_types[tool_id] = "tool_use"
+                            tool_id = block.get("id", "") or f"cli_{tool_name}"
+                            if tool_id in snapshot_tool_ids_seen:
+                                # Already emitted via stream_event or
+                                # top-level path.
+                                continue
+                            snapshot_tool_ids_seen.add(tool_id)
+                            tool_input = block.get("input") or {}
+                            args_json = (
+                                json.dumps(tool_input) if tool_input else "{}"
+                            )
+                            if tool_name in _CLAUDE_CODE_TOOL_BRIDGE:
                                 yield ModelResponseStream(
                                     id=response_id,
                                     created=created,
                                     choice=StreamingChoice(
                                         index=0,
                                         delta=Delta(
-                                            reasoning_content=f"\n\n**Tool: {tool_name}**\n",
+                                            tool_calls=[
+                                                ChatCompletionDeltaToolCall(
+                                                    id=tool_id,
+                                                    index=0,
+                                                    type="function",
+                                                    function=FunctionCall(
+                                                        name=tool_name,
+                                                        arguments=args_json,
+                                                    ),
+                                                )
+                                            ],
+                                        ),
+                                    ),
+                                )
+                            else:
+                                yield ModelResponseStream(
+                                    id=response_id,
+                                    created=created,
+                                    choice=StreamingChoice(
+                                        index=0,
+                                        delta=Delta(
+                                            reasoning_content=(
+                                                _format_builtin_tool_markdown(
+                                                    tool_name, args_json
+                                                )
+                                            ),
                                         ),
                                     ),
                                 )
@@ -795,7 +1063,7 @@ class ClaudeCodeCLI(LLM):
                 id=response_id,
                 created=created,
                 choice=StreamingChoice(
-                    finish_reason="stop",
+                    finish_reason=final_stop_reason or "stop",
                     index=0,
                     delta=Delta(),
                 ),
