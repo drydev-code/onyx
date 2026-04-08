@@ -11,6 +11,10 @@ founders@onyx.app for more information. Please visit https://github.com/onyx-dot
 # Use --build-arg ENABLE_CRAFT=true to include Node.js and opencode CLI
 ARG ENABLE_CRAFT=false
 
+# Build argument for CLI provider support (disabled by default)
+# Use --build-arg ENABLE_CLI_PROVIDERS=true to include Claude Code and Codex CLIs
+ARG ENABLE_CLI_PROVIDERS=false
+
 # DO_NOT_TRACK is used to disable telemetry for Unstructured
 ENV DANSWER_RUNNING_IN_DOCKER="true" \
     DO_NOT_TRACK="true" \
@@ -71,6 +75,26 @@ RUN if [ "$ENABLE_CRAFT" = "true" ]; then \
         curl -fsSL https://opencode.ai/install | bash; \
     fi
 ENV PATH="/root/.opencode/bin:${PATH}"
+
+# Conditionally install Node.js for CLI providers (if not already installed by Craft)
+# Only installed when ENABLE_CLI_PROVIDERS=true and ENABLE_CRAFT is not already true
+RUN if [ "$ENABLE_CLI_PROVIDERS" = "true" ] && [ "$ENABLE_CRAFT" != "true" ]; then \
+        echo "Installing Node.js 20 for CLI provider support..." && \
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+        apt-get install -y nodejs && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Conditionally install Claude Code CLI and Codex CLI
+# Only installed when ENABLE_CLI_PROVIDERS=true
+RUN if [ "$ENABLE_CLI_PROVIDERS" = "true" ]; then \
+        echo "Installing Claude Code CLI..." && \
+        npm install -g @anthropic-ai/claude-code && \
+        echo "Installing OpenAI Codex CLI..." && \
+        npm install -g @openai/codex && \
+        mkdir -p /home/onyx/.claude && \
+        chown onyx:onyx /home/onyx/.claude; \
+    fi
 
 # Install Python dependencies
 # Remove py which is pulled in by retry, py is not needed and is a CVE
@@ -146,6 +170,7 @@ COPY --chown=onyx:onyx ./scripts/force_delete_connector_by_id.py /app/scripts/fo
 COPY --chown=onyx:onyx ./scripts/supervisord_entrypoint.sh /app/scripts/supervisord_entrypoint.sh
 COPY --chown=onyx:onyx ./scripts/setup_craft_templates.sh /app/scripts/setup_craft_templates.sh
 COPY --chown=onyx:onyx ./scripts/reencrypt_secrets.py /app/scripts/reencrypt_secrets.py
+COPY --chown=onyx:onyx ./scripts/force_auto_llm_sync.py /app/scripts/force_auto_llm_sync.py
 RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/setup_craft_templates.sh
 
 # Run Craft template setup at build time when ENABLE_CRAFT=true

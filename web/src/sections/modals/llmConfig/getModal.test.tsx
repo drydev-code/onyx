@@ -89,7 +89,6 @@ jest.mock("@/sections/modals/llmConfig/ClaudeCodeCLIModal", () => ({
   __esModule: true,
   default: () => <div data-testid="ClaudeCodeCLIModal" />,
 }));
-
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
