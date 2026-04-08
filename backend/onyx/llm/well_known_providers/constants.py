@@ -15,8 +15,6 @@ LITELLM_PROXY_PROVIDER_NAME = "litellm_proxy"
 
 BIFROST_PROVIDER_NAME = "bifrost"
 
-OPENAI_COMPATIBLE_PROVIDER_NAME = "openai_compatible"
-
 # Providers that use optional Bearer auth from custom_config
 PROVIDERS_WITH_SPECIAL_API_KEY_HANDLING: dict[str, str] = {
     LlmProviderNames.OLLAMA_CHAT: OLLAMA_API_KEY_CONFIG_KEY,
@@ -40,6 +38,24 @@ VERTEX_PROJECT_KWARG = "vertex_project"
 VERTEX_AUTH_METHOD_KWARG = "vertex_auth_method"
 VERTEX_AUTH_METHOD_SERVICE_ACCOUNT = "service_account_json"
 VERTEX_AUTH_METHOD_WORKLOAD_IDENTITY = "workload_identity"
+
+OPENAI_COMPATIBLE_PROVIDER_NAME = "openai_compatible"
+
+GOOGLE_AI_STUDIO_PROVIDER_NAME = "google_ai_studio"
+
+OPENAI_CODEX_PROVIDER_NAME = "openai_codex"
+OPENAI_CODEX_ACCESS_TOKEN_KEY = "codex_access_token"
+OPENAI_CODEX_REFRESH_TOKEN_KEY = "codex_refresh_token"
+OPENAI_CODEX_ID_TOKEN_KEY = "codex_id_token"
+OPENAI_CODEX_TOKEN_EXPIRES_AT_KEY = "codex_token_expires_at"
+OPENAI_CODEX_DISABLE_BUILTIN_TOOLS_KEY = "openai_codex_disable_builtin_tools"
+
+CLAUDE_CODE_CLI_PROVIDER_NAME = "claude_code_cli"
+CLAUDE_CODE_CLI_PATH_KEY = "cli_path"
+CLAUDE_CODE_AUTH_MODE_KEY = "auth_mode"
+CLAUDE_CODE_MCP_CONFIG_KEY = "mcp_config_json"
+CLAUDE_CODE_OAUTH_TOKEN_KEY = "oauth_token"
+CLAUDE_CODE_DISABLE_BUILTIN_TOOLS_KEY = "claude_code_disable_builtin_tools"
 
 AWS_REGION_NAME_KWARG = "aws_region_name"
 AWS_REGION_NAME_KWARG_ENV_VAR_FORMAT = "AWS_REGION_NAME"
