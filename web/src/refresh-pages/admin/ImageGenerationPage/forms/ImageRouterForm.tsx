@@ -127,7 +127,7 @@ function getInitialValuesFromCredentials(
 ): Partial<ImageRouterFormValues> {
   return {
     api_key: credentials.api_key || "",
-    model_name: credentials.model_name || imageProvider.model_name || "",
+    model_name: imageProvider.model_name || "",
   };
 }
 
