@@ -83,6 +83,7 @@ export const WebSearchToolRenderer: MessageRenderer<SearchToolPacket, {}> = ({
               emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
               showDetailsCard={false}
               isQuery={true}
+              disableAnimation={stopPacketSeen}
             />
           </div>
         ),
@@ -108,6 +109,7 @@ export const WebSearchToolRenderer: MessageRenderer<SearchToolPacket, {}> = ({
             emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
             showDetailsCard={false}
             isQuery={true}
+            disableAnimation={stopPacketSeen}
           />
         ),
       },
@@ -129,6 +131,7 @@ export const WebSearchToolRenderer: MessageRenderer<SearchToolPacket, {}> = ({
           emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
           showDetailsCard={false}
           isQuery={true}
+          disableAnimation={stopPacketSeen}
         />
       ),
       supportsCollapsible: false,

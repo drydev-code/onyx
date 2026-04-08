@@ -977,6 +977,54 @@ async def search_chats(
     )
 
 
+@router.get("/resume-chat-stream/{chat_session_id}", response_model=None)
+def resume_chat_stream(
+    chat_session_id: UUID,
+    user: User = Depends(current_chat_accessible_user),  # noqa: ARG001
+) -> StreamingResponse | Response:
+    """Resume streaming from a running background inference.
+
+    If the user disconnected (closed the tab) while inference was in progress
+    and reconnects before it finishes, this endpoint streams the remaining
+    packets.  If inference already completed, returns 204 No Content so the
+    client knows to fetch the final answer from the session messages instead.
+    """
+    from onyx.chat.background_inference import lookup_by_session
+    from onyx.chat.background_inference import wait_for_packet
+
+    bg = lookup_by_session(chat_session_id)
+    if bg is None or bg.done.is_set():
+        # No active inference — the answer (if any) is already in the DB.
+        return Response(status_code=204)
+
+    # Re-arm the client_disconnected flag so the background drain loop
+    # starts pushing packets to the queue again.
+    bg.client_disconnected.clear()
+
+    def resume_generator() -> Generator[str, None, None]:
+        next_packet_index = 0
+
+        try:
+            while True:
+                item, next_packet_index = wait_for_packet(
+                    bg,
+                    next_packet_index,
+                    timeout=0.05,
+                )
+                if item is None:
+                    if bg.done.is_set():
+                        break
+                    continue
+
+                yield get_json_line(item.model_dump())
+        except GeneratorExit:
+            bg.client_disconnected.set()
+
+    return StreamingResponse(
+        resume_generator(), media_type="text/event-stream"
+    )
+
+
 @router.post("/stop-chat-session/{chat_session_id}", tags=PUBLIC_API_TAGS)
 def stop_chat_session(
     chat_session_id: UUID,

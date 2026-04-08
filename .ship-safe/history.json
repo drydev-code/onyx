@@ -1,0 +1,83 @@
+[
+  {
+    "timestamp": "2026-04-02T13:37:27.032Z",
+    "score": 25,
+    "grade": "F",
+    "totalFindings": 3642,
+    "totalDepVulns": 0,
+    "categoryScores": {
+      "secrets": {
+        "deduction": 15,
+        "counts": {
+          "critical": 1,
+          "high": 63,
+          "medium": 43,
+          "low": 0
+        }
+      },
+      "injection": {
+        "deduction": 15,
+        "counts": {
+          "critical": 110,
+          "high": 60,
+          "medium": 70,
+          "low": 0
+        }
+      },
+      "deps": {
+        "deduction": 0,
+        "counts": {
+          "critical": 0,
+          "high": 0,
+          "medium": 0,
+          "low": 0
+        }
+      },
+      "auth": {
+        "deduction": 15,
+        "counts": {
+          "critical": 0,
+          "high": 24,
+          "medium": 89,
+          "low": 0
+        }
+      },
+      "config": {
+        "deduction": 8,
+        "counts": {
+          "critical": 24,
+          "high": 37,
+          "medium": 424,
+          "low": 36
+        }
+      },
+      "supply-chain": {
+        "deduction": 0,
+        "counts": {
+          "critical": 0,
+          "high": 0,
+          "medium": 0,
+          "low": 0
+        }
+      },
+      "api": {
+        "deduction": 10,
+        "counts": {
+          "critical": 5,
+          "high": 116,
+          "medium": 2,
+          "low": 0
+        }
+      },
+      "llm": {
+        "deduction": 12,
+        "counts": {
+          "critical": 23,
+          "high": 779,
+          "medium": 1736,
+          "low": 0
+        }
+      }
+    }
+  }
+]

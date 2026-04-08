@@ -734,6 +734,7 @@ def litellm_thinks_model_supports_image_input(
 
 def model_is_reasoning_model(model_name: str, model_provider: str) -> bool:
     import litellm
+    import onyx.llm.litellm_singleton  # noqa: F401 - ensures initialize_litellm() has run
 
     model_map = get_model_map()
     try:

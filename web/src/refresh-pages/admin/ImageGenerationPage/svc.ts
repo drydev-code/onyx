@@ -24,6 +24,7 @@ export interface ImageGenerationCredentials {
   api_version: string | null;
   deployment_name: string | null;
   custom_config: Record<string, string> | null;
+  model_name: string | null;
 }
 
 // Creation options - either clone from existing provider or use new credentials

@@ -26,6 +26,10 @@ class LlmProviderNames(str, Enum):
     MISTRAL = "mistral"
     LITELLM_PROXY = "litellm_proxy"
     BIFROST = "bifrost"
+    ZAI = "zai"
+    GOOGLE_AI_STUDIO = "google_ai_studio"
+    OPENAI_CODEX = "openai_codex"
+    CLAUDE_CODE_CLI = "claude_code_cli"
 
     def __str__(self) -> str:
         """Needed so things like:
@@ -46,6 +50,10 @@ WELL_KNOWN_PROVIDER_NAMES = [
     LlmProviderNames.LM_STUDIO,
     LlmProviderNames.LITELLM_PROXY,
     LlmProviderNames.BIFROST,
+    LlmProviderNames.ZAI,
+    LlmProviderNames.GOOGLE_AI_STUDIO,
+    LlmProviderNames.OPENAI_CODEX,
+    LlmProviderNames.CLAUDE_CODE_CLI,
 ]
 
 
@@ -64,6 +72,10 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     LlmProviderNames.LM_STUDIO: "LM Studio",
     LlmProviderNames.LITELLM_PROXY: "LiteLLM Proxy",
     LlmProviderNames.BIFROST: "Bifrost",
+    LlmProviderNames.ZAI: "Z.AI",
+    LlmProviderNames.GOOGLE_AI_STUDIO: "Google AI Studio",
+    LlmProviderNames.OPENAI_CODEX: "OpenAI Codex",
+    LlmProviderNames.CLAUDE_CODE_CLI: "Claude Code CLI",
     "groq": "Groq",
     "anyscale": "Anyscale",
     "deepseek": "DeepSeek",
@@ -103,6 +115,7 @@ VENDOR_BRAND_NAMES: dict[str, str] = {
     "qwen": "Qwen",
     "alibaba": "Qwen",
     "writer": "Palmyra",
+    "zai": "GLM",
 }
 
 # Aggregator providers that host models from multiple vendors
@@ -286,6 +299,8 @@ MODEL_PREFIX_TO_VENDOR: dict[str, str] = {
     "nemotron": "nvidia",
     # xAI
     "grok": "xai",
+    # Z.AI
+    "glm": "zai",
 }
 
 

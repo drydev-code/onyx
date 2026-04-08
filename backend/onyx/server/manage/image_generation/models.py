@@ -129,6 +129,7 @@ class ImageGenerationCredentials(BaseModel):
     api_base: str | None
     api_version: str | None
     deployment_name: str | None
+    model_name: str | None = None
 
     @classmethod
     def from_model(
@@ -148,6 +149,7 @@ class ImageGenerationCredentials(BaseModel):
             api_base=llm_provider.api_base,
             api_version=llm_provider.api_version,
             deployment_name=llm_provider.deployment_name,
+            model_name=config.model_configuration.name,
         )
 
 

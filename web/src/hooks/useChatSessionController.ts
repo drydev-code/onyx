@@ -243,15 +243,19 @@ export default function useChatSessionController({
       // Update message history except for edge where where
       // last message is an error and we're on a new chat.
       // This corresponds to a "renaming" of chat, which occurs after first message
-      // stream
+      // stream.  When switching between sessions, ALWAYS update the tree —
+      // the streaming/loading state belongs to the previously-viewed session,
+      // not this one, and refusing to update would leave stale messages
+      // visible (causing "not on the latest mainline" errors on next submit).
       if (
         (newMessageHistory[newMessageHistory.length - 1]?.type !== "error" ||
           loadedSessionId != null) &&
-        !(
-          currentChatState == "toolBuilding" ||
-          currentChatState == "streaming" ||
-          currentChatState == "loading"
-        )
+        (isSwitchingBetweenSessions ||
+          !(
+            currentChatState == "toolBuilding" ||
+            currentChatState == "streaming" ||
+            currentChatState == "loading"
+          ))
       ) {
         updateCurrentSelectedNodeForDocDisplay(
           newMessageHistory[newMessageHistory.length - 1]?.nodeId ?? null
@@ -262,6 +266,43 @@ export default function useChatSessionController({
       }
 
       setIsFetchingChatMessages(chatSession.chat_session_id, false);
+
+      // If the last assistant message is a "still processing" placeholder,
+      // the backend background thread is still generating.  Poll until the
+      // real answer is persisted, then refresh the message tree.
+      // NOTE: we deliberately avoid calling resumeStream here because it
+      // sets chatState to "streaming", which blocks message tree updates
+      // for subsequent session navigations.
+      const lastBackendMsg =
+        chatSession.messages[chatSession.messages.length - 1];
+      if (
+        lastBackendMsg &&
+        lastBackendMsg.message_type === "assistant" &&
+        lastBackendMsg.message.startsWith("Message is loading")
+      ) {
+        const sessionIdToWait = chatSession.chat_session_id;
+        const poll = setInterval(async () => {
+          try {
+            const resp = await fetch(
+              `/api/chat/get-chat-session/${sessionIdToWait}`
+            );
+            if (!resp.ok) { clearInterval(poll); return; }
+            const s = (await resp.json()) as BackendChatSession;
+            const last = s.messages[s.messages.length - 1];
+            if (
+              !last ||
+              last.message_type !== "assistant" ||
+              !last.message.startsWith("Message is loading")
+            ) {
+              clearInterval(poll);
+              const map = processRawChatHistory(s.messages, s.packets);
+              updateSessionAndMessageTree(sessionIdToWait, map);
+            }
+          } catch { clearInterval(poll); }
+        }, 2000);
+        // Safety cap
+        setTimeout(() => clearInterval(poll), 10 * 60 * 1000);
+      }
 
       // Fetch token count for this chat session's project (if any)
       try {

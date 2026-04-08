@@ -1,0 +1,73 @@
+# Dockerfile.dev - Fast rebuild for code-only changes
+#
+# Two-stage approach:
+#   Stage 1 (deps): Cached npm ci layer - only rebuilds when package.json changes
+#   Stage 2 (build): Next.js build with Turbopack persistent cache
+#   Stage 3 (runner): Minimal production image
+#
+# Usage:
+#   docker build -t onyxdotapp/onyx-web-server:craft-latest -f Dockerfile.dev .
+#
+# Why this is faster than the main Dockerfile:
+#   - Deps layer is cached aggressively (only invalidated by package*.json)
+#   - Next.js build uses Turbopack which has fast incremental rebuilds
+#   - BuildKit can cache the .next/cache directory across builds
+#   - Final image only contains standalone output (~150MB vs full node_modules)
+
+FROM node:20-alpine AS deps
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+# Deps layer - only rebuilds when package files change
+COPY package.json package-lock.json ./
+COPY lib/opal/package.json ./lib/opal/
+RUN npm ci
+
+# ---
+
+FROM node:20-alpine AS builder
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+# Copy deps from cache (opal is an npm workspace, modules are hoisted)
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/package-lock.json ./package-lock.json
+
+# Copy source - this layer invalidates on any code change
+COPY . .
+
+ENV NEXT_PRIVATE_STANDALONE=true
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Build args (kept minimal for dev)
+ARG NEXT_PUBLIC_THEME
+ENV NEXT_PUBLIC_THEME=${NEXT_PUBLIC_THEME}
+
+# Use BuildKit cache mount for .next/cache to speed up incremental builds
+# This persists the Turbopack/webpack cache across Docker builds
+RUN --mount=type=cache,target=/app/.next/cache \
+    npx next build
+
+# ---
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+RUN rm -rf /usr/local/lib/node_modules
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+USER nextjs
+
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+ARG NEXT_PUBLIC_THEME
+ENV NEXT_PUBLIC_THEME=${NEXT_PUBLIC_THEME}
+
+ARG ONYX_VERSION=0.0.0-dev
+ENV ONYX_VERSION=${ONYX_VERSION}
+
+CMD ["node", "server.js"]

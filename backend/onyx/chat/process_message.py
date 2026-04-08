@@ -19,6 +19,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from onyx.cache.factory import get_cache_backend
+from onyx.chat.background_inference import append_packet as _append_bg_packet
+from onyx.chat.background_inference import BackgroundInference
+from onyx.chat.background_inference import mark_done as _mark_bg_done
+from onyx.chat.background_inference import register as _register_bg
+from onyx.chat.background_inference import wait_for_packet as _wait_for_bg_packet
 from onyx.chat.chat_processing_checker import set_processing_status
 from onyx.chat.chat_state import AvailableFiles
 from onyx.chat.chat_state import ChatStateContainer
@@ -940,58 +945,23 @@ _MODEL_DONE = object()
 _CANCEL_POLL_INTERVAL_S: Final[float] = 0.05
 
 
-def _run_models(
+def _run_models_background(
     setup: ChatTurnSetup,
     user: User,
-    db_session: Session,
-    external_state_container: ChatStateContainer | None = None,
-) -> AnswerStream:
-    """Stream packets from one or more LLM loops running in parallel worker threads.
+    bg: BackgroundInference,
+    state_containers: list[ChatStateContainer],
+) -> None:
+    """Run all LLM workers and persist results in a background daemon thread.
 
-    Each model gets its own worker thread, DB session, and ``Emitter``. Threads write
-    packets to a shared unbounded queue as they are produced; the drain loop yields them
-    in arrival order so the caller receives a single interleaved stream regardless of
-    how many models are running.
-
-    Single-model (N=1) and multi-model (N>1) use the same execution path. Every
-    packet is tagged with ``model_index`` by the model's Emitter — ``0`` for N=1,
-    ``0``/``1``/``2`` for multi-model.
-
-    Args:
-        setup: Fully constructed turn context — LLMs, persona, history, tool config.
-        user: Authenticated user making the request.
-        db_session: Caller's DB session (used for setup reads; each worker opens its own
-            session because SQLAlchemy sessions are not thread-safe).
-        external_state_container: Pre-constructed state container for the first model.
-            Used by evals and the non-streaming API path so the caller can inspect
-            accumulated state (tool calls, answer tokens, citations) after the stream
-            is consumed. When ``None`` a fresh container is created automatically.
-
-    Returns:
-        Generator yielding ``Packet`` objects as they arrive from worker threads —
-        answer tokens, tool output, citations — followed by a terminal ``Packet``
-        containing ``OverallStop`` once all models complete (or one containing
-        ``OverallStop(stop_reason="user_cancelled")`` if the connection drops).
+    This is a regular function (NOT a generator).  It opens its own DB session
+    for all persistence work so it can outlive the HTTP request that spawned it.
+    Packets are pushed to ``bg.packet_queue`` for the SSE consumer to read.
     """
     n_models = len(setup.llms)
-
     merged_queue: queue.Queue[tuple[int, Packet | Exception | object]] = queue.Queue()
 
-    state_containers: list[ChatStateContainer] = [
-        (
-            external_state_container
-            if (external_state_container is not None and i == 0)
-            else ChatStateContainer()
-        )
-        for i in range(n_models)
-    ]
     model_succeeded: list[bool] = [False] * n_models
-    # Set to True when a model raises an exception (distinct from "still running").
-    # Used in the stop-button path to avoid calling completion for errored models.
     model_errored: list[bool] = [False] * n_models
-
-    # Set when the drain loop exits early (HTTP disconnect / GeneratorExit).
-    # Signals emitters to skip future puts so workers exit promptly.
     drain_done = threading.Event()
 
     def _run_model(model_idx: int) -> None:
@@ -1005,9 +975,6 @@ def _run_models(
         model_llm = setup.llms[model_idx]
 
         try:
-            # Each worker opens its own session — SQLAlchemy sessions are not thread-safe.
-            # Do NOT write to the outer db_session (or any shared DB state) from here;
-            # all DB writes in this thread must go through thread_db_session.
             with get_session_with_current_tenant() as thread_db_session:
                 thread_tool_dict = construct_tools(
                     persona=setup.persona,
@@ -1051,7 +1018,6 @@ def _run_models(
                         f"Forced tool {setup.forced_tool_id} not found in tools"
                     )
 
-                # Per-thread copy: run_llm_loop mutates simple_chat_history in-place.
                 if n_models == 1 and setup.new_msg_req.deep_research:
                     if setup.chat_session.project_id:
                         raise RuntimeError(
@@ -1102,15 +1068,17 @@ def _run_models(
         finally:
             merged_queue.put((model_idx, _MODEL_DONE))
 
-    def _delete_orphaned_message(model_idx: int, context: str) -> None:
+    def _delete_orphaned_message(
+        bg_db_session: Session, model_idx: int, context: str
+    ) -> None:
         """Delete a reserved ChatMessage that was never populated due to a model error."""
         try:
-            orphaned = db_session.get(
+            orphaned = bg_db_session.get(
                 ChatMessage, setup.reserved_messages[model_idx].id
             )
             if orphaned is not None:
-                db_session.delete(orphaned)
-                db_session.commit()
+                bg_db_session.delete(orphaned)
+                bg_db_session.commit()
         except Exception:
             logger.exception(
                 "%s orphan cleanup failed for model %d (%s)",
@@ -1119,67 +1087,102 @@ def _run_models(
                 setup.model_display_names[model_idx],
             )
 
-    # Copy contextvars before submitting futures — ThreadPoolExecutor does NOT
-    # auto-propagate contextvars in Python 3.11; threads would inherit a blank context.
+    def _refetch_reserved_message(
+        bg_db_session: Session, model_idx: int
+    ) -> ChatMessage | None:
+        """Re-load the reserved ChatMessage inside ``bg_db_session``.
+
+        ``setup.reserved_messages`` was created/attached on the HTTP
+        request's DB session — a different thread and a different session
+        than this background worker.  Passing that object directly to
+        ``save_chat_turn`` would make ``assistant_message.message = ...``
+        a no-op because the object is not in ``bg_db_session``'s identity
+        map, and the commit would never persist the final answer.  The
+        placeholder text ``"Response was terminated prior to completion,
+        try regenerating."`` would then remain in the DB forever.
+        """
+        try:
+            return bg_db_session.get(
+                ChatMessage, setup.reserved_messages[model_idx].id
+            )
+        except Exception:
+            logger.exception(
+                "Failed to refetch reserved message for model %d (%s)",
+                model_idx,
+                setup.model_display_names[model_idx],
+            )
+            return None
+
     worker_context = contextvars.copy_context()
     executor = ThreadPoolExecutor(
         max_workers=n_models, thread_name_prefix="multi-model"
     )
-    completion_persisted: bool = False
+
     try:
         for i in range(n_models):
             executor.submit(worker_context.run, _run_model, i)
 
-        # ── Main thread: merge and yield packets ────────────────────────────
+        # ── Drain loop: forward packets to bg.packet_queue ────────────────
         models_remaining = n_models
         while models_remaining > 0:
             try:
                 model_idx, item = merged_queue.get(timeout=_CANCEL_POLL_INTERVAL_S)
             except queue.Empty:
-                # Check for user-initiated cancellation every 50 ms.
+                # Check for user-initiated cancellation (stop button).
                 if not setup.check_is_connected():
-                    # Save state for every model before exiting.
-                    # - Succeeded models: full answer (is_connected=True).
-                    # - Still-in-flight models: partial answer + "stopped by user".
-                    # - Errored models: delete the orphaned reserved message; do NOT
-                    #   save "stopped by user" for a model that actually threw an exception.
-                    for i in range(n_models):
-                        if model_errored[i]:
-                            _delete_orphaned_message(i, "stop-button")
-                            continue
-                        try:
-                            succeeded = model_succeeded[i]
-                            llm_loop_completion_handle(
-                                state_container=state_containers[i],
-                                is_connected=lambda: succeeded,
-                                db_session=db_session,
-                                assistant_message=setup.reserved_messages[i],
-                                llm=setup.llms[i],
-                                reserved_tokens=setup.reserved_token_count,
-                            )
-                        except Exception:
-                            logger.exception(
-                                "stop-button completion failed for model %d (%s)",
-                                i,
-                                setup.model_display_names[i],
-                            )
-                    yield Packet(
-                        placement=Placement(turn_index=0),
-                        obj=OverallStop(type="stop", stop_reason="user_cancelled"),
+                    # Stop-button cancel: persist results and push OverallStop.
+                    drain_done.set()
+                    executor.shutdown(wait=True)
+
+                    with get_session_with_current_tenant() as bg_db_session:
+                        for i in range(n_models):
+                            if model_errored[i]:
+                                _delete_orphaned_message(
+                                    bg_db_session, i, "stop-button"
+                                )
+                                continue
+                            try:
+                                succeeded = model_succeeded[i]
+                                assistant_msg = _refetch_reserved_message(
+                                    bg_db_session, i
+                                )
+                                if assistant_msg is None:
+                                    continue
+                                llm_loop_completion_handle(
+                                    state_container=state_containers[i],
+                                    is_connected=lambda _s=succeeded: _s,
+                                    db_session=bg_db_session,
+                                    assistant_message=assistant_msg,
+                                    llm=setup.llms[i],
+                                    reserved_tokens=setup.reserved_token_count,
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "stop-button completion failed for model %d (%s)",
+                                    i,
+                                    setup.model_display_names[i],
+                                )
+
+                    _append_bg_packet(
+                        bg,
+                        Packet(
+                            placement=Placement(turn_index=0),
+                            obj=OverallStop(
+                                type="stop", stop_reason="user_cancelled"
+                            ),
+                        ),
                     )
-                    completion_persisted = True
                     return
                 continue
             else:
                 if item is _MODEL_DONE:
                     models_remaining -= 1
                 elif isinstance(item, Exception):
-                    # Yield a tagged error for this model but keep the other models running.
-                    # Do NOT decrement models_remaining — _run_model's finally always posts
-                    # _MODEL_DONE, which is the sole completion signal.
                     error_msg = str(item)
                     stack_trace = "".join(
-                        traceback.format_exception(type(item), item, item.__traceback__)
+                        traceback.format_exception(
+                            type(item), item, item.__traceback__
+                        )
                     )
                     model_llm = setup.llms[model_idx]
                     if model_llm.config.api_key and len(model_llm.config.api_key) > 2:
@@ -1189,88 +1192,163 @@ def _run_models(
                         stack_trace = stack_trace.replace(
                             model_llm.config.api_key, "[REDACTED_API_KEY]"
                         )
-                    yield StreamingError(
-                        error=error_msg,
-                        stack_trace=stack_trace,
-                        error_code="MODEL_ERROR",
-                        is_retryable=True,
-                        details={
-                            "model": model_llm.config.model_name,
-                            "provider": model_llm.config.model_provider,
-                            "model_index": model_idx,
-                        },
+                    # StreamingError items are always pushed — the client needs
+                    # to see errors even after disconnect.
+                    _append_bg_packet(
+                        bg,
+                        StreamingError(
+                            error=error_msg,
+                            stack_trace=stack_trace,
+                            error_code="MODEL_ERROR",
+                            is_retryable=True,
+                            details={
+                                "model": model_llm.config.model_name,
+                                "provider": model_llm.config.model_provider,
+                                "model_index": model_idx,
+                            },
+                        ),
                     )
                 elif isinstance(item, Packet):
-                    # model_index already embedded by the model's Emitter in _run_model
-                    yield item
+                    _append_bg_packet(bg, item)
 
-        # ── Completion: save each successful model's response ───────────────
-        # All model loops have completed (run_llm_loop returned) — no more writes
-        # to state_containers. Worker threads may still be closing their own DB
-        # sessions, but the main-thread db_session is unshared and safe to use.
-        for i in range(n_models):
-            if not model_succeeded[i]:
-                # Model errored — delete its orphaned reserved message.
-                _delete_orphaned_message(i, "normal")
-                continue
-            try:
-                llm_loop_completion_handle(
-                    state_container=state_containers[i],
-                    is_connected=setup.check_is_connected,
-                    db_session=db_session,
-                    assistant_message=setup.reserved_messages[i],
-                    llm=setup.llms[i],
-                    reserved_tokens=setup.reserved_token_count,
-                )
-            except Exception:
-                logger.exception(
-                    "normal completion failed for model %d (%s)",
-                    i,
-                    setup.model_display_names[i],
-                )
-        completion_persisted = True
+        # ── Normal completion: persist results ────────────────────────────
+        # The model worker(s) finished without raising — treat this as a
+        # successful completion regardless of whether the HTTP client is
+        # still connected.  Passing ``setup.check_is_connected`` here would
+        # incorrectly stamp the message with "Generation was stopped by the
+        # user" whenever the user closed the tab during streaming, even
+        # though the LLM actually finished its work in the background.
+        with get_session_with_current_tenant() as bg_db_session:
+            for i in range(n_models):
+                if not model_succeeded[i]:
+                    _delete_orphaned_message(bg_db_session, i, "normal")
+                    continue
+                try:
+                    assistant_msg = _refetch_reserved_message(bg_db_session, i)
+                    if assistant_msg is None:
+                        continue
+                    llm_loop_completion_handle(
+                        state_container=state_containers[i],
+                        is_connected=lambda: True,
+                        db_session=bg_db_session,
+                        assistant_message=assistant_msg,
+                        llm=setup.llms[i],
+                        reserved_tokens=setup.reserved_token_count,
+                    )
+                except Exception:
+                    logger.exception(
+                        "normal completion failed for model %d (%s)",
+                        i,
+                        setup.model_display_names[i],
+                    )
+                    # The placeholder text "Response was terminated prior
+                    # to completion, try regenerating." would otherwise
+                    # remain in the DB, masking the real error.  Delete it
+                    # so the user sees an empty/missing message instead of
+                    # a misleading "stopped" message.
+                    _delete_orphaned_message(
+                        bg_db_session, i, "normal-completion-error"
+                    )
+
+        executor.shutdown(wait=False)
+
+    except Exception:
+        # Unexpected error in the drain loop itself.
+        drain_done.set()
+        executor.shutdown(wait=True)
+        logger.exception("background drain loop failed unexpectedly")
 
     finally:
-        if completion_persisted:
-            # Normal exit or stop-button exit: completion already persisted.
-            # Threads are done (normal path) or can finish in the background (stop-button).
-            executor.shutdown(wait=False)
-        else:
-            # Early exit (GeneratorExit from raw HTTP disconnect, or unhandled
-            # exception in the drain loop).
-            # 1. Signal emitters to stop — future emit() calls return immediately,
-            #    so workers exit their LLM loops promptly.
-            drain_done.set()
-            # 2. Wait for all workers to finish. Once drain_done is set the Emitter
-            #    short-circuits, so workers should exit quickly.
-            executor.shutdown(wait=True)
-            # 3. All workers are done — complete from the main thread only.
-            for i in range(n_models):
-                if model_succeeded[i]:
-                    try:
-                        llm_loop_completion_handle(
-                            state_container=state_containers[i],
-                            # Model already finished — persist full response.
-                            is_connected=lambda: True,
-                            db_session=db_session,
-                            assistant_message=setup.reserved_messages[i],
-                            llm=setup.llms[i],
-                            reserved_tokens=setup.reserved_token_count,
-                        )
-                    except Exception:
-                        logger.exception(
-                            "disconnect completion failed for model %d (%s)",
-                            i,
-                            setup.model_display_names[i],
-                        )
-                elif model_errored[i]:
-                    _delete_orphaned_message(i, "disconnect")
-            # 4. Drain buffered packets from memory — no consumer is running.
-            while not merged_queue.empty():
-                try:
-                    merged_queue.get_nowait()
-                except queue.Empty:
+        # Clear the "processing" fence so the session reload path knows
+        # the answer is ready.  This runs AFTER all persistence, so the
+        # frontend will never see processing=False with a stale/empty
+        # assistant message.
+        try:
+            set_processing_status(
+                chat_session_id=setup.chat_session.id,
+                cache=setup.cache,
+                value=False,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to clear processing status for session %s",
+                setup.chat_session.id,
+            )
+        _mark_bg_done(bg)
+
+
+def _run_models(
+    setup: ChatTurnSetup,
+    user: User,
+    db_session: Session,
+    external_state_container: ChatStateContainer | None = None,
+) -> AnswerStream:
+    """Stream packets from one or more LLM loops running in a background thread.
+
+    Creates a ``BackgroundInference`` entry, starts ``_run_models_background``
+    in a daemon thread, and yields packets from its queue.  If the client
+    disconnects (``GeneratorExit``), we signal the background via
+    ``bg.client_disconnected`` and return — workers keep running and persist
+    results independently.
+
+    Args:
+        setup: Fully constructed turn context.
+        user: Authenticated user making the request.
+        db_session: Caller's DB session (used only for setup reads here;
+            persistence happens in the background thread's own session).
+        external_state_container: Pre-constructed state container for the first
+            model (used by evals / non-streaming API).
+
+    Returns:
+        Generator yielding ``Packet`` and ``StreamingError`` objects from the
+        shared background history until the run completes.
+    """
+    n_models = len(setup.llms)
+
+    state_containers: list[ChatStateContainer] = [
+        (
+            external_state_container
+            if (external_state_container is not None and i == 0)
+            else ChatStateContainer()
+        )
+        for i in range(n_models)
+    ]
+
+    bg = _register_bg(
+        chat_session_id=setup.chat_session.id,
+        message_id=setup.reserved_messages[0].id,
+    )
+
+    # Copy contextvars so the daemon thread inherits tenant context.
+    ctx = contextvars.copy_context()
+    bg_thread = threading.Thread(
+        target=ctx.run,
+        args=(_run_models_background, setup, user, bg, state_containers),
+        daemon=True,
+        name="bg-inference",
+    )
+    bg.thread = bg_thread
+    bg_thread.start()
+
+    next_packet_index = 0
+
+    try:
+        while True:
+            item, next_packet_index = _wait_for_bg_packet(
+                bg,
+                next_packet_index,
+                timeout=_CANCEL_POLL_INTERVAL_S,
+            )
+            if item is None:
+                if bg.done.is_set():
                     break
+                continue
+
+            yield item
+    except GeneratorExit:
+        # Client disconnected — signal the background but do NOT kill workers.
+        bg.client_disconnected.set()
+        return
 
 
 def _stream_chat_turn(
@@ -1325,6 +1403,9 @@ def _stream_chat_turn(
 
     mock_response_token: Token[str | None] | None = None
     setup: ChatTurnSetup | None = None
+    # Tracks whether _run_models was reached.  If True, the background
+    # thread owns processing-status cleanup; if False, we must do it here.
+    background_started = False
 
     try:
         setup = yield from build_chat_turn(
@@ -1345,6 +1426,7 @@ def _stream_chat_turn(
         if new_msg_req.mock_llm_response is not None:
             mock_response_token = set_llm_mock_response(new_msg_req.mock_llm_response)
 
+        background_started = True
         yield from _run_models(
             setup=setup,
             user=user,
@@ -1429,15 +1511,19 @@ def _stream_chat_turn(
     finally:
         if mock_response_token is not None:
             reset_llm_mock_response(mock_response_token)
-        try:
-            if setup is not None:
+        # If the background thread was started, it owns the processing-
+        # status lifecycle and will clear it after persisting results.
+        # Only clear here if we failed before reaching _run_models
+        # (e.g. during build_chat_turn).
+        if not background_started and setup is not None:
+            try:
                 set_processing_status(
                     chat_session_id=setup.chat_session.id,
                     cache=setup.cache,
                     value=False,
                 )
-        except Exception:
-            logger.exception("Error in setting processing status")
+            except Exception:
+                logger.exception("Error clearing processing status after setup failure")
 
 
 def handle_stream_message_objects(

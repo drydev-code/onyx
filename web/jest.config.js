@@ -165,6 +165,7 @@ module.exports = {
         "**/src/refresh-components/**/*.test.tsx",
         "**/src/hooks/**/*.test.tsx",
         "**/src/sections/**/*.test.tsx",
+        "**/src/refresh-pages/**/*.test.tsx",
         // Add more patterns here as you add more integration tests
       ],
     },

@@ -5,6 +5,7 @@ The validation logic in handle_multi_model_stream fires before any external
 calls, so we can trigger it with lightweight mocks.
 """
 
+import threading
 import time
 from collections.abc import Generator
 from typing import Any
@@ -752,3 +753,94 @@ class TestRunModels:
         # The state_container kwarg passed to run_llm_loop must be the external one
         call_kwargs = mock_llm.call_args.kwargs
         assert call_kwargs["state_container"] is external
+
+    def test_resume_replays_full_history_after_disconnect(self) -> None:
+        """Reconnect should replay packets streamed before disconnect, then continue live."""
+        from onyx.chat.background_inference import register
+        from onyx.chat.background_inference import append_packet
+        from onyx.chat.background_inference import mark_done
+        from onyx.chat.background_inference import wait_for_packet
+        from onyx.server.query_and_chat.streaming_models import ReasoningStart
+
+        bg = register(uuid4(), 123)
+
+        first_packet = Packet(
+            placement=Placement(turn_index=0),
+            obj=ReasoningStart(),
+        )
+        second_packet = Packet(
+            placement=Placement(turn_index=0),
+            obj=OverallStop(stop_reason="complete"),
+        )
+
+        append_packet(bg, first_packet)
+
+        first_item, next_index = wait_for_packet(bg, 0, timeout=0.01)
+        assert first_item == first_packet
+        assert next_index == 1
+
+        bg.client_disconnected.set()
+
+        resumed_item, resumed_next_index = wait_for_packet(bg, 0, timeout=0.01)
+        assert resumed_item == first_packet
+        assert resumed_next_index == 1
+
+        def append_later() -> None:
+            time.sleep(0.05)
+            append_packet(bg, second_packet)
+            mark_done(bg)
+
+        writer = threading.Thread(target=append_later)
+        writer.start()
+
+        next_item, final_index = wait_for_packet(bg, resumed_next_index, timeout=1)
+        writer.join(timeout=1)
+
+        assert next_item == second_packet
+        assert final_index == 2
+
+        done_item, done_index = wait_for_packet(bg, final_index, timeout=0.01)
+        assert done_item is None
+        assert done_index == 2
+        assert bg.done.is_set()
+
+    def test_multiple_consumers_can_read_same_history(self) -> None:
+        """Each consumer keeps its own cursor and can replay the shared history."""
+        from onyx.chat.background_inference import register
+        from onyx.chat.background_inference import append_packet
+        from onyx.chat.background_inference import mark_done
+        from onyx.chat.background_inference import wait_for_packet
+        from onyx.server.query_and_chat.streaming_models import ReasoningStart
+
+        bg = register(uuid4(), 456)
+        packet = Packet(
+            placement=Placement(turn_index=0),
+            obj=ReasoningStart(),
+        )
+        append_packet(bg, packet)
+        mark_done(bg)
+
+        first_consumer_item, first_index = wait_for_packet(bg, 0, timeout=0.01)
+        second_consumer_item, second_index = wait_for_packet(bg, 0, timeout=0.01)
+
+        assert first_consumer_item == packet
+        assert second_consumer_item == packet
+        assert first_index == second_index == 1
+
+        first_none, first_none_index = wait_for_packet(bg, first_index, timeout=0.01)
+        second_none, second_none_index = wait_for_packet(bg, second_index, timeout=0.01)
+
+        assert first_none is None
+        assert second_none is None
+        assert first_none_index == second_none_index == 1
+
+        replay_item, replay_index = wait_for_packet(bg, 0, timeout=0.01)
+        assert replay_item == packet
+        assert replay_index == 1
+        assert bg.done.is_set()
+
+        final_none, final_none_index = wait_for_packet(bg, replay_index, timeout=0.01)
+        assert final_none is None
+        assert final_none_index == 1
+
+

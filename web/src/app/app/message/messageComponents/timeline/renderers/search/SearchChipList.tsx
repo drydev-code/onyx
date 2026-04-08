@@ -17,6 +17,13 @@ export interface SearchChipListProps<T> {
   className?: string;
   showDetailsCard?: boolean;
   isQuery?: boolean;
+  /**
+   * Skip the per-chip slide-in animation entirely.  Set this to ``true``
+   * when rendering a message that has already finished streaming (e.g. on
+   * chat reload), so historical search chips don't visually replay one by
+   * one as if a new search were happening.
+   */
+  disableAnimation?: boolean;
 }
 
 type DisplayEntry<T> =
@@ -34,6 +41,7 @@ export function SearchChipList<T>({
   className = "",
   showDetailsCard,
   isQuery,
+  disableAnimation = false,
 }: SearchChipListProps<T>): JSX.Element {
   const [visibleCount, setVisibleCount] = useState(initialCount);
   const animatedKeysRef = useRef<Set<string>>(new Set());
@@ -79,7 +87,11 @@ export function SearchChipList<T>({
     <div className={cn("flex flex-wrap gap-x-2 gap-y-2", className)}>
       {displayList.map((entry) => {
         const key = getEntryKey(entry);
-        const isNew = !animatedKeysRef.current.has(key);
+        // When animation is disabled (e.g. message loaded from history),
+        // every chip is treated as already-revealed so the slide-in
+        // animation is suppressed.
+        const isNew =
+          !disableAnimation && !animatedKeysRef.current.has(key);
         const delay = isNew ? newItemCounter++ * ANIMATION_DELAY_MS : 0;
 
         return (

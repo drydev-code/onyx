@@ -98,6 +98,7 @@ export const FetchToolRenderer: MessageRenderer<FetchToolPacket, {}> = ({
                   if (doc.link) window.open(doc.link, "_blank");
                 }}
                 emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
+                disableAnimation={stopPacketSeen}
               />
             ) : displayUrls ? (
               <SearchChipList
@@ -108,6 +109,7 @@ export const FetchToolRenderer: MessageRenderer<FetchToolPacket, {}> = ({
                 toSourceInfo={urlToSourceInfo}
                 onClick={(url: string) => window.open(url, "_blank")}
                 emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
+                disableAnimation={stopPacketSeen}
               />
             ) : (
               !stopPacketSeen && <BlinkingBar />
@@ -137,6 +139,7 @@ export const FetchToolRenderer: MessageRenderer<FetchToolPacket, {}> = ({
                 if (doc.link) window.open(doc.link, "_blank");
               }}
               emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
+              disableAnimation={stopPacketSeen}
             />
           ) : displayUrls ? (
             <SearchChipList
@@ -147,6 +150,7 @@ export const FetchToolRenderer: MessageRenderer<FetchToolPacket, {}> = ({
               toSourceInfo={urlToSourceInfo}
               onClick={(url: string) => window.open(url, "_blank")}
               emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
+              disableAnimation={stopPacketSeen}
             />
           ) : (
             <div className="flex flex-wrap gap-x-2 gap-y-2 ml-1">

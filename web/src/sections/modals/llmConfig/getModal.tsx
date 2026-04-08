@@ -10,6 +10,10 @@ import BedrockModal from "@/sections/modals/llmConfig/BedrockModal";
 import LMStudioForm from "@/sections/modals/llmConfig/LMStudioForm";
 import LiteLLMProxyModal from "@/sections/modals/llmConfig/LiteLLMProxyModal";
 import BifrostModal from "@/sections/modals/llmConfig/BifrostModal";
+import ZAIModal from "@/sections/modals/llmConfig/ZAIModal";
+import GoogleAIStudioModal from "@/sections/modals/llmConfig/GoogleAIStudioModal";
+import CodexModal from "@/sections/modals/llmConfig/CodexModal";
+import ClaudeCodeCLIModal from "@/sections/modals/llmConfig/ClaudeCodeCLIModal";
 
 function detectIfRealOpenAIProvider(provider: LLMProviderView) {
   return (
@@ -59,6 +63,14 @@ export function getModalForExistingProvider(
       return <LiteLLMProxyModal {...props} />;
     case LLMProviderName.BIFROST:
       return <BifrostModal {...props} />;
+    case LLMProviderName.ZAI:
+      return <ZAIModal {...props} />;
+    case LLMProviderName.GOOGLE_AI_STUDIO:
+      return <GoogleAIStudioModal {...props} />;
+    case LLMProviderName.OPENAI_CODEX:
+      return <CodexModal {...props} />;
+    case LLMProviderName.CLAUDE_CODE_CLI:
+      return <ClaudeCodeCLIModal {...props} />;
     default:
       return <CustomModal {...props} />;
   }

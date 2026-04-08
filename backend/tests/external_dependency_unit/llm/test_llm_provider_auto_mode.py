@@ -124,7 +124,7 @@ class TestAutoModeSyncFeature:
 
         try:
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=mock_recommendations,
             ):
                 # Step 1-2: Upload provider with auto mode on and no model configs
@@ -223,7 +223,7 @@ class TestAutoModeSyncFeature:
 
         try:
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=mock_recommendations,
             ):
                 # Upload an OpenAI provider with auto mode
@@ -333,7 +333,7 @@ class TestAutoModeSyncFeature:
 
             # Step 2: Update provider to enable auto mode
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=mock_recommendations,
             ):
                 put_llm_provider(
@@ -412,7 +412,7 @@ class TestAutoModeSyncFeature:
 
         try:
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=mock_recommendations,
             ):
                 # Upload an OpenAI provider (not in config)
@@ -519,7 +519,7 @@ class TestAutoModeSyncFeature:
 
         try:
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=mock_recommendations,
             ):
                 # Step 1: Create provider 1 (OpenAI) with auto mode
@@ -546,7 +546,7 @@ class TestAutoModeSyncFeature:
             update_default_provider(provider_1.id, provider_1_default_model, db_session)
 
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=mock_recommendations,
             ):
                 # Step 2: Create provider 2 (Anthropic) with auto mode
@@ -753,7 +753,7 @@ class TestAutoModeTransitionsAndResync:
 
             # Step 2: Transition to auto mode
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=auto_config,
             ):
                 put_llm_provider(
@@ -814,7 +814,7 @@ class TestAutoModeTransitionsAndResync:
         try:
             # Step 1: Create in auto mode
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=initial_config,
             ):
                 put_llm_provider(
@@ -912,7 +912,7 @@ class TestAutoModeTransitionsAndResync:
         try:
             # Step 1: Create with config v1
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=config_v1,
             ):
                 put_llm_provider(
@@ -981,7 +981,7 @@ class TestAutoModeTransitionsAndResync:
 
         try:
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=config,
             ):
                 put_llm_provider(
@@ -1077,7 +1077,7 @@ class TestAutoModeTransitionsAndResync:
 
         try:
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=config_v1,
             ):
                 put_llm_provider(
@@ -1178,7 +1178,7 @@ class TestAutoModeTransitionsAndResync:
 
         try:
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=config_v1,
             ):
                 put_llm_provider(
@@ -1263,7 +1263,7 @@ class TestAutoModeTransitionsAndResync:
 
         try:
             with patch(
-                "onyx.server.manage.llm.api.fetch_llm_recommendations_from_github",
+                "onyx.server.manage.llm.api.get_merged_recommendations",
                 return_value=config,
             ):
                 put_llm_provider(

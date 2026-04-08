@@ -27,6 +27,10 @@ const PROVIDER_ICONS: Record<string, IconFunctionComponent> = {
   [LLMProviderName.OPENROUTER]: SvgOpenrouter,
   [LLMProviderName.LM_STUDIO]: SvgLmStudio,
   [LLMProviderName.BIFROST]: SvgBifrost,
+  [LLMProviderName.ZAI]: SvgServer,
+  [LLMProviderName.GOOGLE_AI_STUDIO]: SvgGemini,
+  [LLMProviderName.OPENAI_CODEX]: SvgOpenai,
+  [LLMProviderName.CLAUDE_CODE_CLI]: SvgClaude,
 
   // fallback
   [LLMProviderName.CUSTOM]: SvgServer,
@@ -44,6 +48,10 @@ const PROVIDER_PRODUCT_NAMES: Record<string, string> = {
   [LLMProviderName.OPENROUTER]: "OpenRouter",
   [LLMProviderName.LM_STUDIO]: "LM Studio",
   [LLMProviderName.BIFROST]: "Bifrost",
+  [LLMProviderName.ZAI]: "GLM",
+  [LLMProviderName.GOOGLE_AI_STUDIO]: "Gemini",
+  [LLMProviderName.OPENAI_CODEX]: "OpenAI Codex",
+  [LLMProviderName.CLAUDE_CODE_CLI]: "Claude Code",
 
   // fallback
   [LLMProviderName.CUSTOM]: "Custom Models",
@@ -61,6 +69,10 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   [LLMProviderName.OPENROUTER]: "OpenRouter",
   [LLMProviderName.LM_STUDIO]: "LM Studio",
   [LLMProviderName.BIFROST]: "Bifrost",
+  [LLMProviderName.ZAI]: "Z.AI",
+  [LLMProviderName.GOOGLE_AI_STUDIO]: "Google AI Studio",
+  [LLMProviderName.OPENAI_CODEX]: "OpenAI Codex",
+  [LLMProviderName.CLAUDE_CODE_CLI]: "Claude Code CLI",
 
   // fallback
   [LLMProviderName.CUSTOM]: "Other providers or self-hosted",

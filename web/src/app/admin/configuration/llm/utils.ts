@@ -76,6 +76,9 @@ export const getProviderIcon = (
     qwen: QwenIcon,
     qwq: QwenIcon,
     zai: ZAIIcon,
+    google_ai_studio: GeminiIcon,
+    claude_code_cli: AnthropicIcon,
+    openai_codex: OpenAISVG,
     // Cloud providers - use AWS icon for Bedrock
     bedrock: SvgAws,
     bedrock_converse: SvgAws,

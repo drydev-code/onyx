@@ -46,6 +46,10 @@ import CustomModal from "@/sections/modals/llmConfig/CustomModal";
 import LMStudioForm from "@/sections/modals/llmConfig/LMStudioForm";
 import LiteLLMProxyModal from "@/sections/modals/llmConfig/LiteLLMProxyModal";
 import BifrostModal from "@/sections/modals/llmConfig/BifrostModal";
+import ZAIModal from "@/sections/modals/llmConfig/ZAIModal";
+import GoogleAIStudioModal from "@/sections/modals/llmConfig/GoogleAIStudioModal";
+import CodexModal from "@/sections/modals/llmConfig/CodexModal";
+import ClaudeCodeCLIModal from "@/sections/modals/llmConfig/ClaudeCodeCLIModal";
 import { Section } from "@/layouts/general-layouts";
 
 const route = ADMIN_ROUTES.LLM_MODELS;
@@ -67,6 +71,10 @@ const PROVIDER_DISPLAY_ORDER: string[] = [
   "openrouter",
   "lm_studio",
   "bifrost",
+  "zai",
+  "google_ai_studio",
+  "openai_codex",
+  "claude_code_cli",
 ];
 
 const PROVIDER_MODAL_MAP: Record<
@@ -142,6 +150,34 @@ const PROVIDER_MODAL_MAP: Record<
   ),
   bifrost: (d, open, onOpenChange) => (
     <BifrostModal
+      shouldMarkAsDefault={d}
+      open={open}
+      onOpenChange={onOpenChange}
+    />
+  ),
+  zai: (d, open, onOpenChange) => (
+    <ZAIModal
+      shouldMarkAsDefault={d}
+      open={open}
+      onOpenChange={onOpenChange}
+    />
+  ),
+  google_ai_studio: (d, open, onOpenChange) => (
+    <GoogleAIStudioModal
+      shouldMarkAsDefault={d}
+      open={open}
+      onOpenChange={onOpenChange}
+    />
+  ),
+  openai_codex: (d, open, onOpenChange) => (
+    <CodexModal
+      shouldMarkAsDefault={d}
+      open={open}
+      onOpenChange={onOpenChange}
+    />
+  ),
+  claude_code_cli: (d, open, onOpenChange) => (
+    <ClaudeCodeCLIModal
       shouldMarkAsDefault={d}
       open={open}
       onOpenChange={onOpenChange}

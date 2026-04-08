@@ -4,8 +4,10 @@ import {
   buildChatUrl,
   getAvailableContextTokens,
   nameChatSession,
+  processRawChatHistory,
   updateLlmOverrideForChatSession,
 } from "@/app/app/services/lib";
+import { BackendChatSession } from "@/app/app/interfaces";
 import { getMaxSelectedDocumentTokens } from "@/app/app/projects/projectsService";
 import { DEFAULT_CONTEXT_TOKENS } from "@/lib/constants";
 import { StreamStopInfo } from "@/lib/search/interfaces";
@@ -49,6 +51,7 @@ import {
 import {
   CurrentMessageFIFO,
   updateCurrentMessageFIFO,
+  resumeCurrentMessageFIFO,
 } from "@/app/app/services/currentMessageFIFO";
 import { buildFilters } from "@/lib/search/utils";
 import { toast } from "@/hooks/useToast";
@@ -68,7 +71,7 @@ import {
   useCurrentChatState,
   useCurrentMessageHistory,
 } from "@/app/app/stores/useChatSessionStore";
-import { Packet, MessageStart } from "@/app/app/services/streamingModels";
+import { Packet, MessageStart, MessageDelta, PacketType } from "@/app/app/services/streamingModels";
 import useAgentPreferences from "@/hooks/useAgentPreferences";
 import { useForcedTools } from "@/lib/hooks/useForcedTools";
 import { ProjectFile, useProjectsContext } from "@/providers/ProjectsContext";
@@ -170,6 +173,9 @@ export default function useChatController({
   );
   const updateSessionMessageTree = useChatSessionStore(
     (state) => state.updateSessionMessageTree
+  );
+  const updateSessionAndMessageTree = useChatSessionStore(
+    (state) => state.updateSessionAndMessageTree
   );
   const updateSubmittedMessage = useChatSessionStore(
     (state) => state.updateSubmittedMessage
@@ -980,6 +986,178 @@ export default function useChatController({
     ]
   );
 
+  /**
+   * Resume a live SSE stream for a background inference that is still running
+   * after the user disconnected (closed the tab / navigated away).
+   *
+   * Called by ``useChatSessionController`` when it loads a session whose last
+   * assistant message is still the "Message is loading" placeholder.
+   *
+   * Returns ``true`` if a running inference was found and consumed,
+   * ``false`` if no active inference exists (caller should just show DB state).
+   */
+  const resumeStream = useCallback(
+    async (chatSessionId: string): Promise<boolean> => {
+      const controller = new AbortController();
+      setAbortController(chatSessionId, controller);
+      updateChatStateAction(chatSessionId, "streaming");
+      setStreamingStartTime(chatSessionId, Date.now());
+
+      // Helper to refetch the full session and replace the message tree.
+      const refetchSession = async () => {
+        try {
+          const resp = await fetch(
+            `/api/chat/get-chat-session/${chatSessionId}`
+          );
+          if (resp.ok) {
+            const session = (await resp.json()) as BackendChatSession;
+            const newMap = processRawChatHistory(
+              session.messages,
+              session.packets
+            );
+            updateSessionAndMessageTree(chatSessionId, newMap);
+          }
+        } catch {
+          // Best-effort — the user can still refresh manually.
+        }
+      };
+
+      // Start filling the FIFO in the background (do NOT await).
+      const stack = new CurrentMessageFIFO();
+      const resumePromise = resumeCurrentMessageFIFO(
+        stack,
+        chatSessionId,
+        controller.signal
+      );
+
+      const delay = (ms: number) =>
+        new Promise((resolve) => setTimeout(resolve, ms));
+
+      // Give the resume request a moment to respond with 204 (no active
+      // inference) or start streaming.  If it completes immediately with
+      // ``found === false``, just refetch the session.
+      await delay(100);
+      if (stack.isComplete) {
+        const found = await resumePromise;
+        updateChatStateAction(chatSessionId, "input");
+        setStreamingStartTime(chatSessionId, null);
+        await refetchSession();
+        return found;
+      }
+
+      // ── Drain loop: read packets and update the message tree live ──────
+      // Find the existing last assistant node in the current message tree
+      // so we can update it incrementally with resumed packets.
+      const currentHistory = getLatestMessageChain(
+        useChatSessionStore.getState().sessions.get(chatSessionId)
+          ?.messageTree ?? new Map()
+      );
+      const lastAssistant = [...currentHistory]
+        .reverse()
+        .find((m) => m.type === "assistant");
+
+      let packets: Packet[] = [];
+      let answer = "";
+      let citations: CitationMap | null = null;
+      let documents: OnyxDocument[] = [];
+      let finalMessage: BackendMessage | null = null;
+      let treeLocal =
+        useChatSessionStore.getState().sessions.get(chatSessionId)
+          ?.messageTree ?? new Map<number, Message>();
+
+      while (!stack.isComplete || !stack.isEmpty()) {
+        if (stack.isEmpty()) {
+          await delay(0.5);
+          continue;
+        }
+        if (controller.signal.aborted) break;
+
+        const packet = stack.nextPacket();
+        if (!packet) continue;
+
+        // Process packet types (mirrors onSubmit drain loop)
+        if (
+          Object.hasOwn(packet, "error") &&
+          (packet as any).error != null
+        ) {
+          // Error — stop streaming, refetch for whatever was saved
+          break;
+        } else if (Object.hasOwn(packet, "message_id")) {
+          finalMessage = packet as BackendMessage;
+        } else if (Object.hasOwn(packet, "stop_reason")) {
+          const stop_reason = (packet as StreamStopInfo).stop_reason;
+          if (stop_reason === StreamStopReason.CONTEXT_LENGTH) {
+            updateCanContinue(true, chatSessionId);
+          }
+        } else if (Object.hasOwn(packet, "obj")) {
+          packets.push(packet as Packet);
+
+          const packetObj = (packet as Packet).obj;
+          if (packetObj.type === "citation_info") {
+            const citationInfo = packetObj as {
+              type: "citation_info";
+              citation_number: number;
+              document_id: string;
+            };
+            citations = {
+              ...(citations || {}),
+              [citationInfo.citation_number]: citationInfo.document_id,
+            };
+          } else if (packetObj.type === "message_start") {
+            const messageStart = packetObj as MessageStart;
+            if (messageStart.content) {
+              answer += messageStart.content;
+            }
+            if (messageStart.final_documents) {
+              documents = messageStart.final_documents;
+            }
+          } else if (packetObj.type === PacketType.MESSAGE_DELTA) {
+            const delta = packetObj as MessageDelta;
+            if (delta.content) {
+              answer += delta.content;
+            }
+          }
+        }
+
+        // Update the assistant node in the tree with accumulated state
+        if (lastAssistant) {
+          treeLocal = upsertToCompleteMessageTree({
+            messages: [
+              {
+                ...lastAssistant,
+                message: finalMessage?.message || answer || "",
+                documents:
+                  documents.length > 0 ? documents : lastAssistant.documents,
+                citations:
+                  finalMessage?.citations || citations || lastAssistant.citations,
+                files: finalMessage?.files || lastAssistant.files,
+                toolCall: finalMessage?.tool_call || lastAssistant.toolCall,
+                overridden_model:
+                  finalMessage?.overridden_model ||
+                  lastAssistant.overridden_model,
+                packets: packets,
+                packetCount: packets.length,
+              },
+            ],
+            completeMessageTreeOverride: treeLocal,
+            chatSessionId,
+          });
+        }
+      }
+
+      // Wait for the resume promise to settle
+      await resumePromise;
+
+      // Refetch for final clean state (ensures tool calls, citations, etc.
+      // are fully hydrated from the DB).
+      updateChatStateAction(chatSessionId, "input");
+      setStreamingStartTime(chatSessionId, null);
+      await refetchSession();
+      return true;
+    },
+    []
+  );
+
   const handleMessageSpecificFileUpload = useCallback(
     async (acceptedFiles: File[]) => {
       const [_, llmModel] = getFinalLLM(
@@ -1021,6 +1199,16 @@ export default function useChatController({
       if (abortController) {
         abortController.abort();
         setAbortController(currentSession, new AbortController());
+      }
+      // CRITICAL: reset chat state to "input" on navigation away from a
+      // streaming session.  Otherwise the next session load will see
+      // currentChatState === "streaming" and skip updating the message
+      // tree, leaving the new session showing stale messages from the old
+      // one — which causes "not on the latest mainline" errors when the
+      // user submits a new message in the new session.
+      if (currentSession) {
+        updateChatStateAction(currentSession, "input");
+        setStreamingStartTime(currentSession, null);
       }
     };
   }, [pathname]);
@@ -1151,6 +1339,7 @@ export default function useChatController({
     // actions
     onSubmit,
     stopGenerating,
+    resumeStream,
     handleMessageSpecificFileUpload,
     // data
     availableContextTokens,

@@ -118,6 +118,7 @@ export const InternalSearchToolRenderer: MessageRenderer<
                   </Text>
                 )
               }
+              disableAnimation={stopPacketSeen}
             />
           </div>
         ),
@@ -145,6 +146,7 @@ export const InternalSearchToolRenderer: MessageRenderer<
               emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
               showDetailsCard={false}
               isQuery={true}
+              disableAnimation={stopPacketSeen}
             />
           ),
         },
@@ -181,6 +183,7 @@ export const InternalSearchToolRenderer: MessageRenderer<
                 </Text>
               )
             }
+            disableAnimation={stopPacketSeen}
           />
         ),
       },
@@ -206,6 +209,7 @@ export const InternalSearchToolRenderer: MessageRenderer<
               emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
               showDetailsCard={false}
               isQuery={true}
+              disableAnimation={stopPacketSeen}
             />
           )}
 
@@ -238,6 +242,7 @@ export const InternalSearchToolRenderer: MessageRenderer<
                     </Text>
                   )
                 }
+                disableAnimation={stopPacketSeen}
               />
             </>
           )}

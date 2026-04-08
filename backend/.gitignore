@@ -6,6 +6,7 @@ site_crawls/
 api_keys.py
 *ipynb
 .env*
+!.env.example
 vespa-app.zip
 dynamic_config_storage/
 celerybeat-schedule*

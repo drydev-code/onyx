@@ -111,6 +111,25 @@ export type MessageOrigin =
   | "slackbot"
   | "unknown";
 
+/**
+ * Attempt to resume an SSE stream for a background inference that is still
+ * running after the client disconnected.  Returns ``null`` if no active
+ * inference exists (204 from the backend).
+ */
+export async function resumeChatStream(
+  chatSessionId: string,
+  signal?: AbortSignal
+): Promise<Response | null> {
+  const response = await fetch(
+    `/api/chat/resume-chat-stream/${chatSessionId}`,
+    { signal }
+  );
+  if (response.status === 204) {
+    return null;
+  }
+  return response;
+}
+
 export interface LLMOverride {
   model_provider: string;
   model_version: string;
