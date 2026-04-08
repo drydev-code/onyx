@@ -10,6 +10,14 @@ BASE_BRANCH="integration/base"
 MERGED_BRANCH="integration/merged"
 SYNC_MAIN=true
 ALLOW_DIRTY=false
+DEFAULT_FEATURE_BRANCHES=(
+    "feature/glm"
+    "feature/google-ai-studio-llm"
+    "feature/google-ai-studio-image"
+    "feature/imagerouter"
+    "feature/codex"
+    "feature/claude-code"
+)
 
 usage() {
     cat <<'EOF'
@@ -36,7 +44,15 @@ Behavior:
   - Syncs main from the remote unless --no-sync-main is set
   - Deletes and recreates integration/merged from main
   - Merges integration/base first
-  - Merges either the provided feature branches or all local feature/* branches
+  - Merges either the provided feature branches or the default fork feature order
+
+Default feature merge order:
+  1. feature/glm
+  2. feature/google-ai-studio-llm
+  3. feature/google-ai-studio-image
+  4. feature/imagerouter
+  5. feature/codex
+  6. feature/claude-code
 EOF
 }
 
@@ -96,12 +112,7 @@ collect_feature_branches() {
         return
     fi
 
-    mapfile -t FEATURE_BRANCHES < <(git for-each-ref --format='%(refname:short)' refs/heads/feature/)
-
-    if [[ ${#FEATURE_BRANCHES[@]} -eq 0 ]]; then
-        echo "Error: no local feature/* branches found and none were provided." >&2
-        exit 1
-    fi
+    FEATURE_BRANCHES=("${DEFAULT_FEATURE_BRANCHES[@]}")
 }
 
 rebuild_merged_branch() {
