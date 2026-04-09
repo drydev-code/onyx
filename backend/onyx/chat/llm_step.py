@@ -1011,6 +1011,14 @@ def run_llm_step_pkt_generator(
     arg_parsers: dict[int, Parser] = {}
     reasoning_start = False
     answer_start = False
+    # Track the (turn_index, sub_turn_index) pair under which the most recent
+    # AgentResponseStart was emitted. Each subsequent text burst that lands on
+    # a different turn/sub-turn needs its own AgentResponseStart so the
+    # frontend's packet processor (which only promotes a group to a "display
+    # group" when it contains a MESSAGE_START) can render the text. Without
+    # this, any text emitted after _close_reasoning_if_active increments
+    # turn_index was silently dropped by the UI.
+    last_answer_start_placement: tuple[int, int | None] | None = None
     accumulated_reasoning = ""
     accumulated_answer = ""
     accumulated_raw_answer = ""
@@ -1084,6 +1092,7 @@ def run_llm_step_pkt_generator(
             nonlocal accumulated_answer
             nonlocal accumulated_reasoning
             nonlocal answer_start
+            nonlocal last_answer_start_placement
             nonlocal reasoning_start
             nonlocal turn_index
             nonlocal sub_turn_index
@@ -1110,21 +1119,40 @@ def run_llm_step_pkt_generator(
             # Normal flow for AUTO or NONE tool choice
             yield from _close_reasoning_if_active()
 
-            if not answer_start:
-                # Store pre-answer processing time in state container for save_chat
-                if state_container and pre_answer_processing_time is not None:
-                    state_container.set_pre_answer_processing_time(
-                        pre_answer_processing_time
+            # Emit an AgentResponseStart whenever this chunk's placement differs
+            # from the last AgentResponseStart we sent. Providers like Claude
+            # Code CLI interleave reasoning with text, which causes
+            # _close_reasoning_if_active to increment turn_index between text
+            # bursts — without a new AgentResponseStart at the new turn, the
+            # frontend packet processor never marks the new turn as a display
+            # group and the text is dropped from the live render.
+            current_placement_key: tuple[int, int | None] = (
+                turn_index,
+                sub_turn_index,
+            )
+            if last_answer_start_placement != current_placement_key:
+                # Only attach final_documents / pre_answer_processing_time on
+                # the VERY FIRST AgentResponseStart for this LLM step; later
+                # turn-transition starts are pure section markers.
+                if not answer_start:
+                    if state_container and pre_answer_processing_time is not None:
+                        state_container.set_pre_answer_processing_time(
+                            pre_answer_processing_time
+                        )
+                    yield Packet(
+                        placement=_current_placement(),
+                        obj=AgentResponseStart(
+                            final_documents=final_documents,
+                            pre_answer_processing_seconds=pre_answer_processing_time,
+                        ),
                     )
-
-                yield Packet(
-                    placement=_current_placement(),
-                    obj=AgentResponseStart(
-                        final_documents=final_documents,
-                        pre_answer_processing_seconds=pre_answer_processing_time,
-                    ),
-                )
-                answer_start = True
+                    answer_start = True
+                else:
+                    yield Packet(
+                        placement=_current_placement(),
+                        obj=AgentResponseStart(),
+                    )
+                last_answer_start_placement = current_placement_key
 
             if citation_processor:
                 yield from _emit_citation_results(

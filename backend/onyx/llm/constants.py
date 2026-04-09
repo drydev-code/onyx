@@ -26,6 +26,7 @@ class LlmProviderNames(str, Enum):
     MISTRAL = "mistral"
     LITELLM_PROXY = "litellm_proxy"
     BIFROST = "bifrost"
+    OPENAI_COMPATIBLE = "openai_compatible"
     ZAI = "zai"
     GOOGLE_AI_STUDIO = "google_ai_studio"
     OPENAI_CODEX = "openai_codex"
