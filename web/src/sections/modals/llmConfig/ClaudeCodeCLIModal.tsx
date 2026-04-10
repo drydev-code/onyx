@@ -190,7 +190,6 @@ export default function ClaudeCodeCLIModal({
   variant = "llm-configuration",
   existingLlmProvider,
   shouldMarkAsDefault,
-  open,
   onOpenChange,
   defaultModelName,
   onboardingState,
@@ -203,8 +202,6 @@ export default function ClaudeCodeCLIModal({
   const { wellKnownLLMProvider } = useWellKnownLLMProvider(
     CLAUDE_CODE_CLI_PROVIDER_NAME
   );
-
-  if (open === false) return null;
 
   const onClose = () => onOpenChange?.(false);
 
