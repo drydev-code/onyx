@@ -33,7 +33,6 @@ export default function GoogleAIStudioModal({
   variant = "llm-configuration",
   existingLlmProvider,
   shouldMarkAsDefault,
-  open,
   onOpenChange,
   defaultModelName,
   onboardingState,
@@ -46,8 +45,6 @@ export default function GoogleAIStudioModal({
   const { wellKnownLLMProvider } = useWellKnownLLMProvider(
     GOOGLE_AI_STUDIO_PROVIDER_NAME
   );
-
-  if (open === false) return null;
 
   const onClose = () => onOpenChange?.(false);
 
