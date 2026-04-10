@@ -13,6 +13,7 @@ export enum LLMProviderName {
   LITELLM_PROXY = "litellm_proxy",
   BIFROST = "bifrost",
   OPENAI_COMPATIBLE = "openai_compatible",
+  ZAI = "zai",
   GOOGLE_AI_STUDIO = "google_ai_studio",
   OPENAI_CODEX = "openai_codex",
   CLAUDE_CODE_CLI = "claude_code_cli",
