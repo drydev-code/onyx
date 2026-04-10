@@ -53,6 +53,7 @@ const PROVIDER_DISPLAY_ORDER: string[] = [
   LLMProviderName.LM_STUDIO,
   LLMProviderName.BIFROST,
   LLMProviderName.OPENAI_COMPATIBLE,
+  LLMProviderName.ZAI,
   LLMProviderName.GOOGLE_AI_STUDIO,
   LLMProviderName.OPENAI_CODEX,
   LLMProviderName.CLAUDE_CODE_CLI,

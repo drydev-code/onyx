@@ -18,6 +18,7 @@ from onyx.llm.well_known_providers.constants import CLAUDE_CODE_CLI_PROVIDER_NAM
 from onyx.llm.well_known_providers.constants import GOOGLE_AI_STUDIO_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import OPENAI_CODEX_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import OPENAI_COMPATIBLE_PROVIDER_NAME
+from onyx.llm.well_known_providers.constants import ZAI_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import LITELLM_PROXY_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import LM_STUDIO_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import OLLAMA_PROVIDER_NAME
@@ -54,6 +55,7 @@ def _get_provider_to_models_map() -> dict[str, list[str]]:
         LITELLM_PROXY_PROVIDER_NAME: [],  # Dynamic - fetched from LiteLLM proxy API
         BIFROST_PROVIDER_NAME: [],  # Dynamic - fetched from Bifrost API
         OPENAI_COMPATIBLE_PROVIDER_NAME: [],  # Dynamic - fetched from OpenAI-compatible API
+        ZAI_PROVIDER_NAME: get_zai_model_names(),
         GOOGLE_AI_STUDIO_PROVIDER_NAME: get_google_ai_studio_model_names(),
         OPENAI_CODEX_PROVIDER_NAME: get_openai_codex_model_names(),
         CLAUDE_CODE_CLI_PROVIDER_NAME: get_claude_code_cli_model_names(),
@@ -245,6 +247,11 @@ def get_vertexai_model_names() -> list[str]:
     )
 
 
+def get_zai_model_names() -> list[str]:
+    """Get Z.AI GLM model names (static list)."""
+    return ["glm-5.1", "glm-5-turbo", "glm-5v-turbo"]
+
+
 def get_google_ai_studio_model_names() -> list[str]:
     """Get Google AI Studio model names from litellm's gemini model list.
 
@@ -408,6 +415,7 @@ def get_provider_display_name(provider_name: str) -> str:
         OPENROUTER_PROVIDER_NAME: "OpenRouter",
         LITELLM_PROXY_PROVIDER_NAME: "LiteLLM Proxy",
         OPENAI_COMPATIBLE_PROVIDER_NAME: "OpenAI-Compatible",
+        ZAI_PROVIDER_NAME: "GLM (Z.AI)",
         GOOGLE_AI_STUDIO_PROVIDER_NAME: "Gemini (Google AI Studio)",
         OPENAI_CODEX_PROVIDER_NAME: "OpenAI Codex",
         CLAUDE_CODE_CLI_PROVIDER_NAME: "Claude Code CLI",

@@ -334,6 +334,16 @@ class LitellmLLM(LLM):
             if self._api_base is not None:
                 model_kwargs["api_base"] = self._api_base
 
+        # Z.AI: OpenAI-compatible endpoint for GLM models.
+        # Route through LiteLLM's openai provider with Z.AI's API base.
+        if model_provider == LlmProviderNames.ZAI:
+            from onyx.llm.well_known_providers.constants import ZAI_DEFAULT_API_BASE
+
+            self._custom_llm_provider = "openai"
+            if self._api_base is None:
+                self._api_base = ZAI_DEFAULT_API_BASE
+            model_kwargs["api_base"] = self._api_base
+
         # Google AI Studio: Uses LiteLLM's gemini/ prefix for API key auth.
         # Model names are prefixed with "gemini/" by LiteLLM.
         if model_provider == LlmProviderNames.GOOGLE_AI_STUDIO:
@@ -560,6 +570,7 @@ class LitellmLLM(LLM):
         # Model name
         is_bifrost = self._model_provider == LlmProviderNames.BIFROST
         is_openai_compatible = self._model_provider == LlmProviderNames.OPENAI_COMPATIBLE
+        is_zai = self._model_provider == LlmProviderNames.ZAI
         is_google_ai_studio = self._model_provider == LlmProviderNames.GOOGLE_AI_STUDIO
         is_openai_codex = self._model_provider == LlmProviderNames.OPENAI_CODEX
         model_provider = (
@@ -567,7 +578,7 @@ class LitellmLLM(LLM):
             if is_openai_model  # Uses litellm's completions -> responses bridge
             else self.config.model_provider
         )
-        if is_bifrost or is_openai_compatible or is_openai_codex:
+        if is_bifrost or is_openai_compatible or is_zai or is_openai_codex:
             # These providers use custom_llm_provider="openai" so we pass
             # the model name directly without a provider prefix.
             model = self.config.deployment_name or self.config.model_name
@@ -663,7 +674,7 @@ class LitellmLLM(LLM):
         if structured_response_format:
             optional_kwargs["response_format"] = structured_response_format
 
-        if not (is_claude_model or is_ollama or is_mistral) or is_bifrost or is_openai_compatible or is_openai_codex:
+        if not (is_claude_model or is_ollama or is_mistral) or is_bifrost or is_openai_compatible or is_zai or is_openai_codex:
             # Litellm bug: tool_choice is dropped silently if not specified here for OpenAI
             # However, this param breaks Anthropic and Mistral models,
             # so it must be conditionally included unless the request is
