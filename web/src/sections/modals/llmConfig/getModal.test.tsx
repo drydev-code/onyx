@@ -75,6 +75,11 @@ jest.mock("@/sections/modals/llmConfig/CodexModal", () => ({
   default: () => <div data-testid="CodexModal" />,
 }));
 
+jest.mock("@/sections/modals/llmConfig/ClaudeCodeCLIModal", () => ({
+  __esModule: true,
+  default: () => <div data-testid="ClaudeCodeCLIModal" />,
+}));
+
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
@@ -110,6 +115,11 @@ describe("getModalForExistingProvider", () => {
       "routes OPENAI_CODEX to CodexModal",
       { provider: LLMProviderName.OPENAI_CODEX },
       "CodexModal",
+    ],
+    [
+      "routes CLAUDE_CODE_CLI to ClaudeCodeCLIModal",
+      { provider: LLMProviderName.CLAUDE_CODE_CLI },
+      "ClaudeCodeCLIModal",
     ],
     // Existing providers for regression
     [
