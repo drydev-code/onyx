@@ -66,7 +66,7 @@ describe("CodexModal", () => {
   });
 
   test("renders the OAuth section with 'Sign in with ChatGPT' button", () => {
-    render(<CodexModal open={true} onOpenChange={() => {}} />);
+    render(<CodexModal onOpenChange={() => {}} />);
 
     expect(screen.getByText("Authentication")).toBeInTheDocument();
     expect(
@@ -75,19 +75,12 @@ describe("CodexModal", () => {
   });
 
   test("renders the API key field as an alternative to OAuth", () => {
-    render(<CodexModal open={true} onOpenChange={() => {}} />);
+    render(<CodexModal onOpenChange={() => {}} />);
 
     // The API key field label includes "optional" to indicate OAuth is preferred
     expect(
       screen.getByText(/openai.*optional.*alternative to oauth/i)
     ).toBeInTheDocument();
-  });
-
-  test("does not render when open is false", () => {
-    const { container } = render(
-      <CodexModal open={false} onOpenChange={() => {}} />
-    );
-    expect(container.innerHTML).toBe("");
   });
 
   test("shows user code after starting device auth flow", async () => {
@@ -105,7 +98,7 @@ describe("CodexModal", () => {
       }),
     } as Response);
 
-    render(<CodexModal open={true} onOpenChange={() => {}} />);
+    render(<CodexModal onOpenChange={() => {}} />);
 
     const signInButton = screen.getByRole("button", {
       name: /sign in with chatgpt/i,
@@ -157,7 +150,7 @@ describe("CodexModal", () => {
       }),
     } as Response);
 
-    render(<CodexModal open={true} onOpenChange={() => {}} />);
+    render(<CodexModal onOpenChange={() => {}} />);
 
     const signInButton = screen.getByRole("button", {
       name: /sign in with chatgpt/i,
@@ -184,7 +177,10 @@ describe("CodexModal", () => {
       "/api/admin/llm/codex/device-auth/poll",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ device_code: "dev_code_456" }),
+        body: JSON.stringify({
+          device_code: "dev_code_456",
+          user_code: "TEST-CODE",
+        }),
       })
     );
 
@@ -199,7 +195,7 @@ describe("CodexModal", () => {
       json: async () => ({ detail: "Service unavailable" }),
     } as Response);
 
-    render(<CodexModal open={true} onOpenChange={() => {}} />);
+    render(<CodexModal onOpenChange={() => {}} />);
 
     const signInButton = screen.getByRole("button", {
       name: /sign in with chatgpt/i,

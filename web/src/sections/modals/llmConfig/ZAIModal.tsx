@@ -33,7 +33,6 @@ export default function ZAIModal({
   variant = "llm-configuration",
   existingLlmProvider,
   shouldMarkAsDefault,
-  open,
   onOpenChange,
   defaultModelName,
   onboardingState,
@@ -44,8 +43,6 @@ export default function ZAIModal({
   const [isTesting, setIsTesting] = useState(false);
   const { mutate } = useSWRConfig();
   const { wellKnownLLMProvider } = useWellKnownLLMProvider(ZAI_PROVIDER_NAME);
-
-  if (open === false) return null;
 
   const onClose = () => onOpenChange?.(false);
 

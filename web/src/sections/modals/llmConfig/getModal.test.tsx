@@ -216,7 +216,7 @@ describe("getModalForExistingProvider", () => {
 
   test.each(cases)("%s", (_label, overrides, expectedTestId) => {
     const provider = makeProvider(overrides);
-    const element = getModalForExistingProvider(provider, true, jest.fn());
+    const element = getModalForExistingProvider(provider, jest.fn());
     render(<>{element}</>);
     expect(screen.getByTestId(expectedTestId)).toBeInTheDocument();
   });

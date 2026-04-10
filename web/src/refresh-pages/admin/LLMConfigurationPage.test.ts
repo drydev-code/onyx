@@ -34,7 +34,7 @@ describe("LLMConfigurationPage provider coverage", () => {
     test.each(requiredProviders)(
       "has an entry for %s",
       (providerKey) => {
-        // The map uses string keys like: zai: (d, open, onOpenChange) => (
+        // The map uses string keys like: zai: (d, onOpenChange) => (
         const pattern = new RegExp(
           `${providerKey}\\s*:\\s*\\(`
         );
