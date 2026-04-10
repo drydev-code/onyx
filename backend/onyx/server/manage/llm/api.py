@@ -79,6 +79,8 @@ from onyx.server.manage.llm.models import LMStudioFinalModelResponse
 from onyx.server.manage.llm.models import LMStudioModelsRequest
 from onyx.server.manage.llm.models import ModelConfigurationUpsertRequest
 from onyx.server.manage.llm.models import OllamaFinalModelResponse
+from onyx.server.manage.llm.models import OpenAICompatibleFinalModelResponse
+from onyx.server.manage.llm.models import OpenAICompatibleModelsRequest
 from onyx.server.manage.llm.models import OllamaModelDetails
 from onyx.server.manage.llm.models import OllamaModelsRequest
 from onyx.server.manage.llm.models import OpenRouterFinalModelResponse
