@@ -2,32 +2,32 @@
 
 import { useState, useCallback } from "react";
 import { useSWRConfig } from "swr";
-import { Formik } from "formik";
-import { LLMProviderFormProps } from "@/interfaces/llm";
-import * as Yup from "yup";
-import { useWellKnownLLMProvider } from "@/hooks/useLLMProviders";
+import { useFormikContext } from "formik";
+import { LLMProviderFormProps, LLMProviderName } from "@/interfaces/llm";
 import {
-  buildDefaultInitialValues,
-  buildDefaultValidationSchema,
-  buildAvailableModelConfigurations,
-  buildOnboardingInitialValues,
+  useInitialValues,
+  buildValidationSchema,
+  BaseLLMFormValues,
 } from "@/sections/modals/llmConfig/utils";
-import {
-  submitLLMProvider,
-  submitOnboardingProvider,
-} from "@/sections/modals/llmConfig/svc";
+import { submitProvider } from "@/sections/modals/llmConfig/svc";
+import { LLMProviderConfiguredSource } from "@/lib/analytics";
 import {
   APIKeyField,
-  ModelsField,
+  ModelSelectionField,
   DisplayNameField,
-  ModelsAccessField,
-  FieldSeparator,
-  SingleDefaultModelField,
-  LLMConfigurationModalWrapper,
+  ModelAccessField,
+  ModalWrapper,
 } from "@/sections/modals/llmConfig/shared";
+import * as InputLayouts from "@/layouts/input-layouts";
+import { refreshLlmProviderCaches } from "@/lib/llmConfig/cache";
+import { toast } from "@/hooks/useToast";
 
-const CODEX_PROVIDER_NAME = "openai_codex";
-const DEFAULT_DEFAULT_MODEL_NAME = "gpt-5.4";
+interface CodexFormValues extends BaseLLMFormValues {
+  codex_access_token: string;
+  codex_refresh_token: string;
+  codex_id_token: string;
+  codex_token_expires_at: string;
+}
 
 type OAuthState =
   | { status: "idle" }
@@ -45,17 +45,28 @@ type OAuthState =
     }
   | { status: "error"; message: string };
 
-function OAuthSection({
-  onTokenReceived,
-}: {
-  onTokenReceived: (
-    accessToken: string,
-    refreshToken: string | null,
-    expiresAt: number,
-    idToken?: string | null
-  ) => void;
-}) {
+/**
+ * OAuth device-flow section. Rendered inside Formik context so it can
+ * write token values directly via useFormikContext.
+ */
+function OAuthSection() {
+  const { setFieldValue } = useFormikContext<CodexFormValues>();
   const [oauthState, setOAuthState] = useState<OAuthState>({ status: "idle" });
+
+  const onTokenReceived = useCallback(
+    (
+      accessToken: string,
+      refreshToken: string | null,
+      expiresAt: number,
+      idToken?: string | null
+    ) => {
+      setFieldValue("codex_access_token", accessToken);
+      setFieldValue("codex_refresh_token", refreshToken ?? "");
+      setFieldValue("codex_id_token", idToken ?? "");
+      setFieldValue("codex_token_expires_at", String(expiresAt));
+    },
+    [setFieldValue]
+  );
 
   const startDeviceAuth = useCallback(async () => {
     try {
@@ -73,7 +84,6 @@ function OAuthSection({
         deviceCode: data.device_code,
       });
 
-      // Start polling
       const interval = (data.interval || 5) * 1000;
       const pollUntil = Date.now() + data.expires_in * 1000;
 
@@ -91,7 +101,10 @@ function OAuthSection({
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ device_code: data.device_code, user_code: data.user_code }),
+              body: JSON.stringify({
+                device_code: data.device_code,
+                user_code: data.user_code,
+              }),
             }
           );
           const pollData = await pollRes.json();
@@ -117,7 +130,6 @@ function OAuthSection({
             setOAuthState({ status: "error", message: pollData.error });
             return;
           }
-          // Still pending, continue polling
           setTimeout(poll, interval);
         } catch {
           setTimeout(poll, interval);
@@ -203,73 +215,42 @@ export default function CodexModal({
   existingLlmProvider,
   shouldMarkAsDefault,
   onOpenChange,
-  defaultModelName,
-  onboardingState,
-  onboardingActions,
-  llmDescriptor,
+  onSuccess,
 }: LLMProviderFormProps) {
   const isOnboarding = variant === "onboarding";
-  const [isTesting, setIsTesting] = useState(false);
   const { mutate } = useSWRConfig();
-  const { wellKnownLLMProvider } = useWellKnownLLMProvider(CODEX_PROVIDER_NAME);
 
   const onClose = () => onOpenChange?.(false);
 
-  const modelConfigurations = buildAvailableModelConfigurations(
-    existingLlmProvider,
-    wellKnownLLMProvider ?? llmDescriptor
+  const baseInitialValues = useInitialValues(
+    isOnboarding,
+    LLMProviderName.OPENAI_CODEX,
+    existingLlmProvider
   );
 
-  const initialValues = isOnboarding
-    ? {
-        ...buildOnboardingInitialValues(),
-        name: CODEX_PROVIDER_NAME,
-        provider: CODEX_PROVIDER_NAME,
-        api_key: "",
-        default_model_name: DEFAULT_DEFAULT_MODEL_NAME,
-        codex_access_token: "",
-        codex_refresh_token: "",
-        codex_id_token: "",
-        codex_token_expires_at: "",
-      }
-    : {
-        ...buildDefaultInitialValues(
-          existingLlmProvider,
-          modelConfigurations,
-          defaultModelName
-        ),
-        api_key: existingLlmProvider?.api_key ?? "",
-        default_model_name:
-          (defaultModelName &&
-          modelConfigurations.some((m) => m.name === defaultModelName)
-            ? defaultModelName
-            : undefined) ??
-          wellKnownLLMProvider?.recommended_default_model?.name ??
-          DEFAULT_DEFAULT_MODEL_NAME,
-        is_auto_mode: existingLlmProvider?.is_auto_mode ?? true,
-        codex_access_token:
-          existingLlmProvider?.custom_config?.["codex_access_token"] ?? "",
-        codex_refresh_token:
-          existingLlmProvider?.custom_config?.["codex_refresh_token"] ?? "",
-        codex_id_token:
-          existingLlmProvider?.custom_config?.["codex_id_token"] ?? "",
-        codex_token_expires_at:
-          existingLlmProvider?.custom_config?.["codex_token_expires_at"] ?? "",
-      };
+  const initialValues: CodexFormValues = {
+    ...baseInitialValues,
+    api_key: existingLlmProvider?.api_key ?? "",
+    codex_access_token:
+      existingLlmProvider?.custom_config?.["codex_access_token"] ?? "",
+    codex_refresh_token:
+      existingLlmProvider?.custom_config?.["codex_refresh_token"] ?? "",
+    codex_id_token:
+      existingLlmProvider?.custom_config?.["codex_id_token"] ?? "",
+    codex_token_expires_at:
+      existingLlmProvider?.custom_config?.["codex_token_expires_at"] ?? "",
+  };
 
-  const validationSchema = isOnboarding
-    ? Yup.object().shape({
-        default_model_name: Yup.string().required("Model name is required"),
-      })
-    : buildDefaultValidationSchema();
+  const validationSchema = buildValidationSchema(isOnboarding);
 
   return (
-    <Formik
+    <ModalWrapper<CodexFormValues>
+      providerName={LLMProviderName.OPENAI_CODEX}
+      llmProvider={existingLlmProvider}
+      onClose={onClose}
       initialValues={initialValues}
       validationSchema={validationSchema}
-      validateOnMount={true}
-      onSubmit={async (values, { setSubmitting }) => {
-        // Pack OAuth tokens into custom_config
+      onSubmit={async (values, { setSubmitting, setStatus }) => {
         const customConfig: Record<string, string> = {};
         if (values.codex_access_token) {
           customConfig["codex_access_token"] = values.codex_access_token;
@@ -281,111 +262,66 @@ export default function CodexModal({
           customConfig["codex_id_token"] = values.codex_id_token;
         }
         if (values.codex_token_expires_at) {
-          customConfig["codex_token_expires_at"] =
-            String(values.codex_token_expires_at);
+          customConfig["codex_token_expires_at"] = String(
+            values.codex_token_expires_at
+          );
         }
-        const submitValues = {
+
+        const submitValues: CodexFormValues = {
           ...values,
           custom_config: customConfig,
-          // Use OAuth token as api_key if no api_key provided
           api_key:
             values.api_key || values.codex_access_token || "not-required",
         };
 
-        if (isOnboarding && onboardingState && onboardingActions) {
-          const modelConfigsToUse =
-            (wellKnownLLMProvider ?? llmDescriptor)?.known_models ?? [];
-
-          await submitOnboardingProvider({
-            providerName: CODEX_PROVIDER_NAME,
-            payload: {
-              ...submitValues,
-              model_configurations: modelConfigsToUse,
-              is_auto_mode:
-                values.default_model_name === DEFAULT_DEFAULT_MODEL_NAME,
-            },
-            onboardingState,
-            onboardingActions,
-            isCustomProvider: false,
-            onClose,
-            setIsSubmitting: setSubmitting,
-          });
-        } else {
-          await submitLLMProvider({
-            providerName: CODEX_PROVIDER_NAME,
-            values: submitValues,
-            initialValues,
-            modelConfigurations,
-            existingLlmProvider,
-            shouldMarkAsDefault,
-            setIsTesting,
-            mutate,
-            onClose,
-            setSubmitting,
-          });
-        }
+        await submitProvider<CodexFormValues>({
+          analyticsSource: isOnboarding
+            ? LLMProviderConfiguredSource.CHAT_ONBOARDING
+            : LLMProviderConfiguredSource.ADMIN_PAGE,
+          providerName: LLMProviderName.OPENAI_CODEX,
+          values: submitValues,
+          initialValues,
+          existingLlmProvider,
+          shouldMarkAsDefault,
+          setStatus,
+          setSubmitting,
+          onClose,
+          onSuccess: async () => {
+            if (onSuccess) {
+              await onSuccess();
+            } else {
+              await refreshLlmProviderCaches(mutate);
+              toast.success(
+                existingLlmProvider
+                  ? "Provider updated successfully!"
+                  : "Provider enabled successfully!"
+              );
+            }
+          },
+        });
       }}
     >
-      {(formikProps) => (
-        <LLMConfigurationModalWrapper
-          providerEndpoint={CODEX_PROVIDER_NAME}
-          existingProviderName={existingLlmProvider?.name}
-          onClose={onClose}
-          isFormValid={formikProps.isValid}
-          isDirty={formikProps.dirty}
-          isTesting={isTesting}
-          isSubmitting={formikProps.isSubmitting}
-        >
-          <OAuthSection
-            onTokenReceived={(accessToken, refreshToken, expiresAt, idToken) => {
-              formikProps.setFieldValue("codex_access_token", accessToken);
-              formikProps.setFieldValue(
-                "codex_refresh_token",
-                refreshToken ?? ""
-              );
-              formikProps.setFieldValue(
-                "codex_id_token",
-                idToken ?? ""
-              );
-              formikProps.setFieldValue(
-                "codex_token_expires_at",
-                String(expiresAt)
-              );
-            }}
-          />
+      <OAuthSection />
 
-          <FieldSeparator />
-          <APIKeyField providerName="OpenAI (optional, alternative to OAuth)" />
+      <InputLayouts.FieldSeparator />
+      <APIKeyField providerName="OpenAI (optional, alternative to OAuth)" />
 
-          {!isOnboarding && (
-            <>
-              <FieldSeparator />
-              <DisplayNameField disabled={!!existingLlmProvider} />
-            </>
-          )}
-
-          <FieldSeparator />
-          {isOnboarding ? (
-            <SingleDefaultModelField placeholder="E.g. gpt-5.4" />
-          ) : (
-            <ModelsField
-              modelConfigurations={modelConfigurations}
-              formikProps={formikProps}
-              recommendedDefaultModel={
-                wellKnownLLMProvider?.recommended_default_model ?? null
-              }
-              shouldShowAutoUpdateToggle={true}
-            />
-          )}
-
-          {!isOnboarding && (
-            <>
-              <FieldSeparator />
-              <ModelsAccessField formikProps={formikProps} />
-            </>
-          )}
-        </LLMConfigurationModalWrapper>
+      {!isOnboarding && (
+        <>
+          <InputLayouts.FieldSeparator />
+          <DisplayNameField disabled={!!existingLlmProvider} />
+        </>
       )}
-    </Formik>
+
+      <InputLayouts.FieldSeparator />
+      <ModelSelectionField shouldShowAutoUpdateToggle={true} />
+
+      {!isOnboarding && (
+        <>
+          <InputLayouts.FieldSeparator />
+          <ModelAccessField />
+        </>
+      )}
+    </ModalWrapper>
   );
 }
