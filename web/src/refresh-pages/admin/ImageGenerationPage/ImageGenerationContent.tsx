@@ -84,6 +84,33 @@ export default function ImageGenerationContent() {
     return configs.find((c) => c.is_default);
   }, [configs]);
 
+  // Merge static provider groups with dynamically connected ImageRouter models
+  const displayProviderGroups = useMemo(() => {
+    return IMAGE_PROVIDER_GROUPS.map((group) => {
+      if (group.name !== "ImageRouter") return group;
+
+      // Inject connected ImageRouter configs as additional provider cards
+      const connectedImageRouterProviders: ImageProvider[] = configs
+        .filter(
+          (c) =>
+            c.image_provider_id.startsWith("imagerouter_") &&
+            c.image_provider_id !== "imagerouter_custom"
+        )
+        .map((c) => ({
+          image_provider_id: c.image_provider_id,
+          model_name: c.model_name,
+          provider_name: "imagerouter",
+          title: `ImageRouter — ${c.model_name}`,
+          description: `ImageRouter model: ${c.model_name}`,
+        }));
+
+      return {
+        ...group,
+        providers: [...connectedImageRouterProviders, ...group.providers],
+      };
+    });
+  }, [configs]);
+
   const getStatus = (
     provider: ImageProvider
   ): "disconnected" | "connected" | "selected" => {
@@ -189,7 +216,7 @@ export default function ImageGenerationContent() {
   // Group connected replacement models by provider (excluding the model being disconnected)
   const replacementGroups = useMemo(() => {
     if (!disconnectProvider) return [];
-    return IMAGE_PROVIDER_GROUPS.map((group) => ({
+    return displayProviderGroups.map((group) => ({
       ...group,
       providers: group.providers.filter(
         (p) =>
@@ -197,7 +224,7 @@ export default function ImageGenerationContent() {
           connectedProviderIds.has(p.image_provider_id)
       ),
     })).filter((g) => g.providers.length > 0);
-  }, [disconnectProvider, connectedProviderIds]);
+  }, [disconnectProvider, connectedProviderIds, displayProviderGroups]);
 
   const needsReplacement = !!isDisconnectingDefault;
   const hasReplacements = replacementGroups.length > 0;
@@ -233,7 +260,7 @@ export default function ImageGenerationContent() {
         )}
 
         {/* Provider Groups */}
-        {IMAGE_PROVIDER_GROUPS.map((group) => (
+        {displayProviderGroups.map((group) => (
           <div key={group.name} className="flex flex-col gap-2">
             <Content title={group.name} sizePreset="secondary" variant="body" />
             {group.providers.map((provider) => {
