@@ -2,32 +2,30 @@
 
 import { useState, useCallback } from "react";
 import { useSWRConfig } from "swr";
-import { Formik } from "formik";
-import { LLMProviderFormProps } from "@/interfaces/llm";
-import * as Yup from "yup";
-import { useWellKnownLLMProvider } from "@/hooks/useLLMProviders";
-import {
-  buildDefaultInitialValues,
-  buildDefaultValidationSchema,
-  buildAvailableModelConfigurations,
-  buildOnboardingInitialValues,
-} from "@/sections/modals/llmConfig/utils";
-import {
-  submitLLMProvider,
-  submitOnboardingProvider,
-} from "@/sections/modals/llmConfig/svc";
-import {
-  ModelsField,
-  DisplayNameField,
-  ModelsAccessField,
-  FieldSeparator,
-  SingleDefaultModelField,
-  LLMConfigurationModalWrapper,
-} from "@/sections/modals/llmConfig/shared";
 import { useField } from "formik";
+import { LLMProviderFormProps, LLMProviderName } from "@/interfaces/llm";
+import {
+  useInitialValues,
+  buildValidationSchema,
+  BaseLLMFormValues,
+} from "@/sections/modals/llmConfig/utils";
+import { submitProvider } from "@/sections/modals/llmConfig/svc";
+import { LLMProviderConfiguredSource } from "@/lib/analytics";
+import {
+  ModelSelectionField,
+  DisplayNameField,
+  ModelAccessField,
+  ModalWrapper,
+} from "@/sections/modals/llmConfig/shared";
+import * as InputLayouts from "@/layouts/input-layouts";
+import { refreshLlmProviderCaches } from "@/lib/llmConfig/cache";
+import { toast } from "@/hooks/useToast";
 
-const CLAUDE_CODE_CLI_PROVIDER_NAME = "claude_code_cli";
-const DEFAULT_DEFAULT_MODEL_NAME = "claude-sonnet-4-6";
+interface ClaudeCodeCLIFormValues extends BaseLLMFormValues {
+  custom_config_cli_path: string;
+  custom_config_auth_mode: string;
+  custom_config_oauth_token: string;
+}
 
 function CLIPathField() {
   const [field] = useField("custom_config_cli_path");
@@ -84,7 +82,10 @@ function AuthModeField() {
       if (data.status === "ok") {
         setTestState({ status: "success" });
       } else {
-        setTestState({ status: "error", message: data.error || "Unknown error" });
+        setTestState({
+          status: "error",
+          message: data.error || "Unknown error",
+        });
       }
     } catch (e) {
       setTestState({
@@ -163,9 +164,7 @@ function AuthModeField() {
               type="button"
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={testToken}
-              disabled={
-                !tokenField.value || testState.status === "testing"
-              }
+              disabled={!tokenField.value || testState.status === "testing"}
             >
               {testState.status === "testing" ? "Testing..." : "Test Token"}
             </button>
@@ -175,9 +174,7 @@ function AuthModeField() {
               </span>
             )}
             {testState.status === "error" && (
-              <span className="text-sm text-red-700">
-                {testState.message}
-              </span>
+              <span className="text-sm text-red-700">{testState.message}</span>
             )}
           </div>
         </div>
@@ -191,23 +188,17 @@ export default function ClaudeCodeCLIModal({
   existingLlmProvider,
   shouldMarkAsDefault,
   onOpenChange,
-  defaultModelName,
-  onboardingState,
-  onboardingActions,
-  llmDescriptor,
+  onSuccess,
 }: LLMProviderFormProps) {
   const isOnboarding = variant === "onboarding";
-  const [isTesting, setIsTesting] = useState(false);
   const { mutate } = useSWRConfig();
-  const { wellKnownLLMProvider } = useWellKnownLLMProvider(
-    CLAUDE_CODE_CLI_PROVIDER_NAME
-  );
 
   const onClose = () => onOpenChange?.(false);
 
-  const modelConfigurations = buildAvailableModelConfigurations(
-    existingLlmProvider,
-    wellKnownLLMProvider ?? llmDescriptor
+  const baseInitialValues = useInitialValues(
+    isOnboarding,
+    LLMProviderName.CLAUDE_CODE_CLI,
+    existingLlmProvider
   );
 
   const existingCliPath =
@@ -217,50 +208,24 @@ export default function ClaudeCodeCLIModal({
   const existingOAuthToken =
     existingLlmProvider?.custom_config?.["oauth_token"] ?? "";
 
-  const initialValues = isOnboarding
-    ? {
-        ...buildOnboardingInitialValues(),
-        name: CLAUDE_CODE_CLI_PROVIDER_NAME,
-        provider: CLAUDE_CODE_CLI_PROVIDER_NAME,
-        api_key: "",
-        default_model_name: DEFAULT_DEFAULT_MODEL_NAME,
-        custom_config_cli_path: "",
-        custom_config_auth_mode: "api_key",
-        custom_config_oauth_token: "",
-      }
-    : {
-        ...buildDefaultInitialValues(
-          existingLlmProvider,
-          modelConfigurations,
-          defaultModelName
-        ),
-        api_key: existingLlmProvider?.api_key ?? "",
-        default_model_name:
-          (defaultModelName &&
-          modelConfigurations.some((m) => m.name === defaultModelName)
-            ? defaultModelName
-            : undefined) ??
-          wellKnownLLMProvider?.recommended_default_model?.name ??
-          DEFAULT_DEFAULT_MODEL_NAME,
-        is_auto_mode: existingLlmProvider?.is_auto_mode ?? true,
-        custom_config_cli_path: existingCliPath,
-        custom_config_auth_mode: existingAuthMode,
-        custom_config_oauth_token: existingOAuthToken,
-      };
+  const initialValues: ClaudeCodeCLIFormValues = {
+    ...baseInitialValues,
+    api_key: existingLlmProvider?.api_key ?? "",
+    custom_config_cli_path: existingCliPath,
+    custom_config_auth_mode: existingAuthMode,
+    custom_config_oauth_token: existingOAuthToken,
+  };
 
-  const validationSchema = isOnboarding
-    ? Yup.object().shape({
-        default_model_name: Yup.string().required("Model name is required"),
-      })
-    : buildDefaultValidationSchema();
+  const validationSchema = buildValidationSchema(isOnboarding);
 
   return (
-    <Formik
+    <ModalWrapper<ClaudeCodeCLIFormValues>
+      providerName={LLMProviderName.CLAUDE_CODE_CLI}
+      llmProvider={existingLlmProvider}
+      onClose={onClose}
       initialValues={initialValues}
       validationSchema={validationSchema}
-      validateOnMount={true}
-      onSubmit={async (values, { setSubmitting }) => {
-        // Pack CLI path, auth_mode, and oauth_token into custom_config
+      onSubmit={async (values, { setSubmitting, setStatus }) => {
         const customConfig: Record<string, string> = {};
         if (values.custom_config_cli_path) {
           customConfig["cli_path"] = values.custom_config_cli_path;
@@ -274,94 +239,64 @@ export default function ClaudeCodeCLIModal({
         ) {
           customConfig["oauth_token"] = values.custom_config_oauth_token;
         }
-        const submitValues = {
+
+        const submitValues: ClaudeCodeCLIFormValues = {
           ...values,
           custom_config: customConfig,
-          // When OAuth mode, API key is not needed
           api_key:
             values.custom_config_auth_mode === "oauth"
               ? "not-required"
               : values.api_key || "not-required",
         };
 
-        if (isOnboarding && onboardingState && onboardingActions) {
-          const modelConfigsToUse =
-            (wellKnownLLMProvider ?? llmDescriptor)?.known_models ?? [];
-
-          await submitOnboardingProvider({
-            providerName: CLAUDE_CODE_CLI_PROVIDER_NAME,
-            payload: {
-              ...submitValues,
-              model_configurations: modelConfigsToUse,
-              is_auto_mode:
-                values.default_model_name === DEFAULT_DEFAULT_MODEL_NAME,
-            },
-            onboardingState,
-            onboardingActions,
-            isCustomProvider: false,
-            onClose,
-            setIsSubmitting: setSubmitting,
-          });
-        } else {
-          await submitLLMProvider({
-            providerName: CLAUDE_CODE_CLI_PROVIDER_NAME,
-            values: submitValues,
-            initialValues,
-            modelConfigurations,
-            existingLlmProvider,
-            shouldMarkAsDefault,
-            setIsTesting,
-            mutate,
-            onClose,
-            setSubmitting,
-          });
-        }
+        await submitProvider<ClaudeCodeCLIFormValues>({
+          analyticsSource: isOnboarding
+            ? LLMProviderConfiguredSource.CHAT_ONBOARDING
+            : LLMProviderConfiguredSource.ADMIN_PAGE,
+          providerName: LLMProviderName.CLAUDE_CODE_CLI,
+          values: submitValues,
+          initialValues,
+          existingLlmProvider,
+          shouldMarkAsDefault,
+          setStatus,
+          setSubmitting,
+          onClose,
+          onSuccess: async () => {
+            if (onSuccess) {
+              await onSuccess();
+            } else {
+              await refreshLlmProviderCaches(mutate);
+              toast.success(
+                existingLlmProvider
+                  ? "Provider updated successfully!"
+                  : "Provider enabled successfully!"
+              );
+            }
+          },
+        });
       }}
     >
-      {(formikProps) => (
-        <LLMConfigurationModalWrapper
-          providerEndpoint={CLAUDE_CODE_CLI_PROVIDER_NAME}
-          existingProviderName={existingLlmProvider?.name}
-          onClose={onClose}
-          isFormValid={formikProps.isValid}
-          isDirty={formikProps.dirty}
-          isTesting={isTesting}
-          isSubmitting={formikProps.isSubmitting}
-        >
-          <CLIPathField />
+      <CLIPathField />
 
-          <FieldSeparator />
-          <AuthModeField />
+      <InputLayouts.FieldSeparator />
+      <AuthModeField />
 
-          {!isOnboarding && (
-            <>
-              <FieldSeparator />
-              <DisplayNameField disabled={!!existingLlmProvider} />
-            </>
-          )}
-
-          <FieldSeparator />
-          {isOnboarding ? (
-            <SingleDefaultModelField placeholder="E.g. claude-sonnet-4-6" />
-          ) : (
-            <ModelsField
-              modelConfigurations={modelConfigurations}
-              formikProps={formikProps}
-              recommendedDefaultModel={
-                wellKnownLLMProvider?.recommended_default_model ?? null
-              }
-              shouldShowAutoUpdateToggle={true}
-            />
-          )}
-
-          {!isOnboarding && (
-            <>
-              <FieldSeparator />
-              <ModelsAccessField formikProps={formikProps} />
-            </>
-          )}
-        </LLMConfigurationModalWrapper>
+      {!isOnboarding && (
+        <>
+          <InputLayouts.FieldSeparator />
+          <DisplayNameField disabled={!!existingLlmProvider} />
+        </>
       )}
-    </Formik>
+
+      <InputLayouts.FieldSeparator />
+      <ModelSelectionField shouldShowAutoUpdateToggle={true} />
+
+      {!isOnboarding && (
+        <>
+          <InputLayouts.FieldSeparator />
+          <ModelAccessField />
+        </>
+      )}
+    </ModalWrapper>
   );
 }
