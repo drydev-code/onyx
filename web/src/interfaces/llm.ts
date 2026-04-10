@@ -124,7 +124,6 @@ export interface LLMProviderFormProps {
   variant?: LLMModalVariant;
   existingLlmProvider?: LLMProviderView;
   shouldMarkAsDefault?: boolean;
-  open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /** Called after successful provider creation/update. */
   onSuccess?: () => void | Promise<void>;
@@ -193,6 +192,21 @@ export interface LMStudioFetchParams {
   signal?: AbortSignal;
 }
 
+export interface OpenAICompatibleFetchParams {
+  api_base?: string;
+  api_key?: string;
+  provider_name?: string;
+  signal?: AbortSignal;
+}
+
+export interface OpenAICompatibleModelResponse {
+  name: string;
+  display_name: string;
+  max_input_tokens: number | null;
+  supports_image_input: boolean;
+  supports_reasoning: boolean;
+}
+
 export type FetchModelsParams =
   | BedrockFetchParams
   | OllamaFetchParams
@@ -200,4 +214,5 @@ export type FetchModelsParams =
   | LiteLLMProxyFetchParams
   | BifrostFetchParams
   | VertexAIFetchParams
-  | LMStudioFetchParams;
+  | LMStudioFetchParams
+  | OpenAICompatibleFetchParams;
