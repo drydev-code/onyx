@@ -202,7 +202,6 @@ export default function CodexModal({
   variant = "llm-configuration",
   existingLlmProvider,
   shouldMarkAsDefault,
-  open,
   onOpenChange,
   defaultModelName,
   onboardingState,
@@ -213,8 +212,6 @@ export default function CodexModal({
   const [isTesting, setIsTesting] = useState(false);
   const { mutate } = useSWRConfig();
   const { wellKnownLLMProvider } = useWellKnownLLMProvider(CODEX_PROVIDER_NAME);
-
-  if (open === false) return null;
 
   const onClose = () => onOpenChange?.(false);
 
