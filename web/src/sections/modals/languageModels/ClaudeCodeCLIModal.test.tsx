@@ -60,14 +60,14 @@ describe("ClaudeCodeCLIModal", () => {
   });
 
   test("renders the CLI Path field", () => {
-    render(<ClaudeCodeCLIModal open={true} onOpenChange={() => {}} />);
+    render(<ClaudeCodeCLIModal onOpenChange={() => {}} />);
 
     expect(screen.getByLabelText(/cli path/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText("claude")).toBeInTheDocument();
   });
 
   test("renders the Authentication Mode radio buttons", () => {
-    render(<ClaudeCodeCLIModal open={true} onOpenChange={() => {}} />);
+    render(<ClaudeCodeCLIModal onOpenChange={() => {}} />);
 
     expect(screen.getByText("Authentication Mode")).toBeInTheDocument();
     expect(screen.getByLabelText("API Key")).toBeInTheDocument();
@@ -75,7 +75,7 @@ describe("ClaudeCodeCLIModal", () => {
   });
 
   test("defaults to API Key auth mode", () => {
-    render(<ClaudeCodeCLIModal open={true} onOpenChange={() => {}} />);
+    render(<ClaudeCodeCLIModal onOpenChange={() => {}} />);
 
     const apiKeyRadio = screen.getByLabelText("API Key") as HTMLInputElement;
     const oauthRadio = screen.getByLabelText("OAuth Token") as HTMLInputElement;
@@ -85,7 +85,7 @@ describe("ClaudeCodeCLIModal", () => {
   });
 
   test("does not show OAuth token input when API Key mode is selected", () => {
-    render(<ClaudeCodeCLIModal open={true} onOpenChange={() => {}} />);
+    render(<ClaudeCodeCLIModal onOpenChange={() => {}} />);
 
     // The OAuth token input should not be visible in API Key mode
     expect(
@@ -96,7 +96,7 @@ describe("ClaudeCodeCLIModal", () => {
   test("shows OAuth token input when OAuth mode is selected", async () => {
     const user = setupUser();
 
-    render(<ClaudeCodeCLIModal open={true} onOpenChange={() => {}} />);
+    render(<ClaudeCodeCLIModal onOpenChange={() => {}} />);
 
     // Click the OAuth Token radio
     const oauthRadio = screen.getByLabelText("OAuth Token");
@@ -118,7 +118,7 @@ describe("ClaudeCodeCLIModal", () => {
   test("Test Token button is disabled when OAuth token field is empty", async () => {
     const user = setupUser();
 
-    render(<ClaudeCodeCLIModal open={true} onOpenChange={() => {}} />);
+    render(<ClaudeCodeCLIModal onOpenChange={() => {}} />);
 
     // Switch to OAuth mode
     const oauthRadio = screen.getByLabelText("OAuth Token");
@@ -133,7 +133,7 @@ describe("ClaudeCodeCLIModal", () => {
   test("Test Token button is enabled when OAuth token is provided", async () => {
     const user = setupUser();
 
-    render(<ClaudeCodeCLIModal open={true} onOpenChange={() => {}} />);
+    render(<ClaudeCodeCLIModal onOpenChange={() => {}} />);
 
     // Switch to OAuth mode
     await user.click(screen.getByLabelText("OAuth Token"));
@@ -160,7 +160,7 @@ describe("ClaudeCodeCLIModal", () => {
       json: async () => ({ status: "ok" }),
     } as Response);
 
-    render(<ClaudeCodeCLIModal open={true} onOpenChange={() => {}} />);
+    render(<ClaudeCodeCLIModal onOpenChange={() => {}} />);
 
     // Switch to OAuth mode and enter a token
     await user.click(screen.getByLabelText("OAuth Token"));
@@ -201,7 +201,7 @@ describe("ClaudeCodeCLIModal", () => {
       json: async () => ({ status: "error", error: "Token expired" }),
     } as Response);
 
-    render(<ClaudeCodeCLIModal open={true} onOpenChange={() => {}} />);
+    render(<ClaudeCodeCLIModal onOpenChange={() => {}} />);
 
     // Switch to OAuth mode and enter a token
     await user.click(screen.getByLabelText("OAuth Token"));
@@ -222,17 +222,11 @@ describe("ClaudeCodeCLIModal", () => {
   });
 
   test("renders MCP Configuration field", () => {
-    render(<ClaudeCodeCLIModal open={true} onOpenChange={() => {}} />);
+    render(<ClaudeCodeCLIModal onOpenChange={() => {}} />);
 
     expect(
       screen.getByLabelText(/mcp configuration/i)
     ).toBeInTheDocument();
   });
 
-  test("does not render when open is false", () => {
-    const { container } = render(
-      <ClaudeCodeCLIModal open={false} onOpenChange={() => {}} />
-    );
-    expect(container.innerHTML).toBe("");
-  });
 });
