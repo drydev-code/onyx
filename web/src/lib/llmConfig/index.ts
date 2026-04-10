@@ -32,6 +32,7 @@ import LMStudioModal from "@/sections/modals/llmConfig/LMStudioModal";
 import LiteLLMProxyModal from "@/sections/modals/llmConfig/LiteLLMProxyModal";
 import BifrostModal from "@/sections/modals/llmConfig/BifrostModal";
 import OpenAICompatibleModal from "@/sections/modals/llmConfig/OpenAICompatibleModal";
+import ZAIModal from "@/sections/modals/llmConfig/ZAIModal";
 
 // ─── Text (LLM) providers ────────────────────────────────────────────────────
 
@@ -114,6 +115,12 @@ const PROVIDERS: Record<string, ProviderEntry> = {
     productName: "OpenAI-Compatible",
     companyName: "OpenAI-Compatible",
     Modal: OpenAICompatibleModal,
+  },
+  [LLMProviderName.ZAI]: {
+    icon: ZAIIcon,
+    productName: "GLM",
+    companyName: "Z.AI",
+    Modal: ZAIModal,
   },
   [LLMProviderName.GOOGLE_AI_STUDIO]: {
     icon: SvgGemini,
