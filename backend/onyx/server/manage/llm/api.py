@@ -12,15 +12,17 @@ from botocore.exceptions import NoCredentialsError
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Query
+from pydantic import BaseModel
 from pydantic import ValidationError
+
+from onyx.llm.constants import LlmProviderNames
 from sqlalchemy.orm import Session
 
-from onyx.auth.permissions import require_permission
 from onyx.auth.schemas import UserRole
+from onyx.auth.users import current_admin_user
 from onyx.auth.users import current_chat_accessible_user
 from onyx.db.engine.sql_engine import get_session
 from onyx.db.enums import LLMModelFlowType
-from onyx.db.enums import Permission
 from onyx.db.llm import can_user_access_llm_provider
 from onyx.db.llm import fetch_default_llm_model
 from onyx.db.llm import fetch_default_vision_model
@@ -49,7 +51,7 @@ from onyx.llm.utils import get_bedrock_token_limit
 from onyx.llm.utils import get_llm_contextual_cost
 from onyx.llm.utils import test_llm
 from onyx.llm.well_known_providers.auto_update_service import (
-    fetch_llm_recommendations_from_github,
+    get_merged_recommendations,
 )
 from onyx.llm.well_known_providers.constants import LM_STUDIO_API_KEY_CONFIG_KEY
 from onyx.llm.well_known_providers.llm_provider_options import (
@@ -78,8 +80,6 @@ from onyx.server.manage.llm.models import ModelConfigurationUpsertRequest
 from onyx.server.manage.llm.models import OllamaFinalModelResponse
 from onyx.server.manage.llm.models import OllamaModelDetails
 from onyx.server.manage.llm.models import OllamaModelsRequest
-from onyx.server.manage.llm.models import OpenAICompatibleFinalModelResponse
-from onyx.server.manage.llm.models import OpenAICompatibleModelsRequest
 from onyx.server.manage.llm.models import OpenRouterFinalModelResponse
 from onyx.server.manage.llm.models import OpenRouterModelDetails
 from onyx.server.manage.llm.models import OpenRouterModelsRequest
@@ -315,7 +315,7 @@ def fetch_custom_provider_names(
 
 @admin_router.get("/built-in/options")
 def fetch_llm_options(
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
 ) -> list[WellKnownLLMProviderDescriptor]:
     return fetch_available_well_known_llms()
 
@@ -323,7 +323,7 @@ def fetch_llm_options(
 @admin_router.get("/built-in/options/{provider_name}")
 def fetch_llm_provider_options(
     provider_name: str,
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
 ) -> WellKnownLLMProviderDescriptor:
     well_known_llms = fetch_available_well_known_llms()
     for well_known_llm in well_known_llms:
@@ -335,7 +335,7 @@ def fetch_llm_provider_options(
 @admin_router.post("/test")
 def test_llm_configuration(
     test_llm_request: TestLLMRequest,
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> None:
     """Test LLM configuration settings"""
@@ -374,6 +374,35 @@ def test_llm_configuration(
     # Therefore, instead of performing additional, more complex logic, we just use a dummy value
     max_input_tokens = -1
 
+    # OpenAI Codex with OAuth tokens uses ChatGPT session auth which routes
+    # through chatgpt.com/backend-api — protected by Cloudflare and incompatible
+    # with server-to-server HTTP validation. The token can only be used via the
+    # Codex CLI which handles Cloudflare challenges.
+    # When OAuth token is present, accept the configuration without a test call.
+    # When using an API key instead, fall through to the standard LiteLLM test.
+    if test_llm_request.provider == LlmProviderNames.OPENAI_CODEX:
+        from onyx.llm.well_known_providers.constants import (
+            OPENAI_CODEX_ACCESS_TOKEN_KEY,
+        )
+
+        has_oauth = (
+            test_custom_config
+            and test_custom_config.get(OPENAI_CODEX_ACCESS_TOKEN_KEY)
+        )
+        if has_oauth:
+            return  # OAuth token accepted — validated during device auth flow
+
+    # Claude Code CLI uses subprocess - test by running a simple command
+    if test_llm_request.provider == LlmProviderNames.CLAUDE_CODE_CLI:
+        from onyx.llm.cli_availability import check_claude_cli_available
+
+        if not check_claude_cli_available():
+            raise OnyxError(
+                OnyxErrorCode.VALIDATION_ERROR,
+                "Claude Code CLI ('claude') is not installed or not accessible on the server.",
+            )
+        return
+
     llm = get_llm(
         provider=test_llm_request.provider,
         model=test_llm_request.model,
@@ -393,7 +422,7 @@ def test_llm_configuration(
 
 @admin_router.post("/test/default")
 def test_default_provider(
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
 ) -> None:
     try:
         llm = get_default_llm()
@@ -409,7 +438,7 @@ def test_default_provider(
 @admin_router.get("/provider")
 def list_llm_providers(
     include_image_gen: bool = Query(False),
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> LLMProviderResponse[LLMProviderView]:
     start_time = datetime.now(timezone.utc)
@@ -454,7 +483,7 @@ def put_llm_provider(
         False,
         description="True if creating a new one, False if updating an existing provider",
     ),
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> LLMProviderView:
     # validate request (e.g. if we're intending to create but the name already exists we should throw an error)
@@ -563,12 +592,14 @@ def put_llm_provider(
             db_session=db_session,
         )
 
-        # If newly enabling Auto mode, sync models immediately from GitHub config
+        # If newly enabling Auto mode, sync models immediately. Use the merged
+        # bundled+GitHub config so providers that only live in the bundled file
+        # (zai, google_ai_studio, openai_codex, claude_code_cli) get synced too.
         if transitioning_to_auto_mode:
             from onyx.db.llm import sync_auto_mode_models
 
-            config = fetch_llm_recommendations_from_github()
-            if config and llm_provider_upsert_request.provider in config.providers:
+            config = get_merged_recommendations()
+            if llm_provider_upsert_request.provider in config.providers:
                 updated_provider = fetch_existing_llm_provider_by_id(
                     id=result.id, db_session=db_session
                 )
@@ -592,7 +623,7 @@ def put_llm_provider(
 def delete_llm_provider(
     provider_id: int,
     force: bool = Query(False),
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> None:
     if not force:
@@ -613,7 +644,7 @@ def delete_llm_provider(
 @admin_router.post("/default")
 def set_provider_as_default(
     default_model_request: DefaultModel,
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> None:
     update_default_provider(
@@ -626,7 +657,7 @@ def set_provider_as_default(
 @admin_router.post("/default-vision")
 def set_provider_as_default_vision(
     default_model: DefaultModel,
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> None:
     update_default_vision_provider(
@@ -638,25 +669,21 @@ def set_provider_as_default_vision(
 
 @admin_router.get("/auto-config")
 def get_auto_config(
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
 ) -> dict:
-    """Get the current Auto mode configuration from GitHub.
+    """Get the current Auto mode configuration.
 
-    Returns the available models and default configurations for each
-    supported provider type when using Auto mode.
+    Returns the merged bundled+GitHub config so the response covers every
+    provider that the backend knows about, including ones the upstream JSON
+    doesn't list yet (e.g. zai, google_ai_studio, openai_codex, claude_code_cli).
     """
-    config = fetch_llm_recommendations_from_github()
-    if not config:
-        raise OnyxError(
-            OnyxErrorCode.BAD_GATEWAY,
-            "Failed to fetch configuration from GitHub",
-        )
+    config = get_merged_recommendations()
     return config.model_dump()
 
 
 @admin_router.get("/vision-providers")
 def get_vision_capable_providers(
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> LLMProviderResponse[VisionProviderResponse]:
     """Return a list of LLM providers and their models that support image input"""
@@ -887,7 +914,7 @@ def list_llm_providers_for_persona(
 
 @admin_router.get("/provider-contextual-cost")
 def get_provider_contextual_cost(
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> list[LLMCost]:
     """
@@ -936,7 +963,7 @@ def get_provider_contextual_cost(
 @admin_router.post("/bedrock/available-models")
 def get_bedrock_available_models(
     request: BedrockModelsRequest,
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> list[BedrockFinalModelResponse]:
     """Fetch available Bedrock models for a specific region and credentials.
@@ -1111,7 +1138,7 @@ def _get_ollama_available_model_names(api_base: str) -> set[str]:
 @admin_router.post("/ollama/available-models")
 def get_ollama_available_models(
     request: OllamaModelsRequest,
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> list[OllamaFinalModelResponse]:
     """Fetch the list of available models from an Ollama server."""
@@ -1236,7 +1263,7 @@ def _get_openrouter_models_response(api_base: str, api_key: str | None) -> dict:
 @admin_router.post("/openrouter/available-models")
 def get_openrouter_available_models(
     request: OpenRouterModelsRequest,
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> list[OpenRouterFinalModelResponse]:
     """Fetch available models from OpenRouter `/models` endpoint.
@@ -1321,7 +1348,7 @@ def get_openrouter_available_models(
 @admin_router.post("/lm-studio/available-models")
 def get_lm_studio_available_models(
     request: LMStudioModelsRequest,
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> list[LMStudioFinalModelResponse]:
     """Fetch available models from an LM Studio server.
@@ -1433,7 +1460,7 @@ def get_lm_studio_available_models(
 @admin_router.post("/litellm/available-models")
 def get_litellm_available_models(
     request: LitellmModelsRequest,
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> list[LitellmFinalModelResponse]:
     """Fetch available models from Litellm proxy /v1/models endpoint."""
@@ -1570,7 +1597,7 @@ def _get_openai_compatible_models_response(
 @admin_router.post("/bifrost/available-models")
 def get_bifrost_available_models(
     request: BifrostModelsRequest,
-    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> list[BifrostFinalModelResponse]:
     """Fetch available models from Bifrost gateway /v1/models endpoint."""
@@ -1755,3 +1782,111 @@ def _get_openai_compatible_server_response(
         source_name="OpenAI-Compatible",
         api_key=api_key,
     )
+
+
+# ---- OpenAI Codex OAuth endpoints ----
+
+
+class CodexDeviceAuthResponse(BaseModel):
+    device_code: str  # device_auth_id from OpenAI
+    user_code: str
+    verification_uri: str
+    expires_in: int
+    interval: int
+
+
+class CodexDeviceAuthPollRequest(BaseModel):
+    device_code: str  # device_auth_id
+    user_code: str
+
+
+class CodexPollResponse(BaseModel):
+    status: str  # "pending", "authorized", "error"
+    access_token: str | None = None
+    refresh_token: str | None = None
+    id_token: str | None = None
+    expires_in: int | None = None
+    error: str | None = None
+
+
+@admin_router.post("/codex/device-auth")
+def initiate_codex_device_auth(
+    _: User = Depends(current_admin_user),
+) -> CodexDeviceAuthResponse:
+    """Initiate OpenAI Codex device code authorization flow."""
+    from onyx.server.manage.llm.codex_oauth import initiate_device_auth
+
+    auth = initiate_device_auth()
+    return CodexDeviceAuthResponse(
+        device_code=auth.device_auth_id,
+        user_code=auth.user_code,
+        verification_uri=auth.verification_uri,
+        expires_in=900,  # 15 minutes
+        interval=auth.interval,
+    )
+
+
+@admin_router.post("/codex/device-auth/poll")
+def poll_codex_device_auth(
+    request: CodexDeviceAuthPollRequest,
+    _: User = Depends(current_admin_user),
+) -> CodexPollResponse:
+    """Poll for token after user authorizes via device code flow."""
+    from onyx.server.manage.llm.codex_oauth import poll_for_token
+
+    try:
+        token = poll_for_token(request.device_code, request.user_code)
+        if token is None:
+            return CodexPollResponse(status="pending")
+        return CodexPollResponse(
+            status="authorized",
+            access_token=token.access_token,
+            refresh_token=token.refresh_token,
+            id_token=token.id_token,
+            expires_in=token.expires_in,
+        )
+    except ValueError as e:
+        return CodexPollResponse(status="error", error=str(e))
+
+
+class ClaudeCLISetupTokenRequest(BaseModel):
+    oauth_token: str
+    cli_path: str = "claude"
+
+
+class ClaudeCLISetupTokenResponse(BaseModel):
+    status: str  # "ok" or "error"
+    error: str | None = None
+    cli_version: str | None = None
+
+
+@admin_router.post("/claude-cli/setup-token")
+def setup_claude_cli_token(
+    request: ClaudeCLISetupTokenRequest,
+    _: User = Depends(current_admin_user),
+) -> ClaudeCLISetupTokenResponse:
+    """Validate and accept a Claude Code CLI OAuth token.
+
+    Runs a quick CLI command with the token set as CLAUDE_CODE_OAUTH_TOKEN
+    to verify the CLI is reachable and the token format is plausible.
+    """
+    from onyx.server.manage.llm.claude_cli_auth import validate_oauth_token
+
+    error = validate_oauth_token(
+        oauth_token=request.oauth_token,
+        cli_path=request.cli_path,
+    )
+    if error:
+        return ClaudeCLISetupTokenResponse(status="error", error=error)
+
+    return ClaudeCLISetupTokenResponse(status="ok")
+
+
+@admin_router.get("/cli-availability")
+def get_cli_availability_endpoint(
+    _: User = Depends(current_admin_user),
+) -> dict[str, bool]:
+    """Return which CLI tools (Claude Code, Codex) are available on the server."""
+    from onyx.llm.cli_availability import get_cli_availability
+
+    return get_cli_availability()

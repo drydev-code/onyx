@@ -327,19 +327,121 @@ class LitellmLLM(LLM):
         ):
             model_kwargs[VERTEX_LOCATION_KWARG] = "global"
 
-        # Bifrost and OpenAI-compatible: OpenAI-compatible proxies that send
-        # model names directly to the endpoint. We route through LiteLLM's
-        # openai provider with the server's base URL, and ensure /v1 is appended.
-        if model_provider in (
-            LlmProviderNames.BIFROST,
-            LlmProviderNames.OPENAI_COMPATIBLE,
-        ):
+        # OpenAI-Compatible: generic OpenAI-compatible endpoint.
+        # Route through LiteLLM's openai provider with the user-provided API base.
+        if model_provider == LlmProviderNames.OPENAI_COMPATIBLE:
             self._custom_llm_provider = "openai"
-            # LiteLLM's OpenAI client requires an api_key to be set.
-            # Many OpenAI-compatible servers don't need auth, so supply a
-            # placeholder to prevent LiteLLM from raising AuthenticationError.
-            if not self._api_key:
-                model_kwargs.setdefault("api_key", "not-needed")
+            if self._api_base is not None:
+                model_kwargs["api_base"] = self._api_base
+
+        # Google AI Studio: Uses LiteLLM's gemini/ prefix for API key auth.
+        # Model names are prefixed with "gemini/" by LiteLLM.
+        if model_provider == LlmProviderNames.GOOGLE_AI_STUDIO:
+            self._custom_llm_provider = "gemini"
+
+        # OpenAI Codex: Uses OAuth tokens stored in custom_config.
+        # When OAuth tokens are present, route through ChatGPT's backend API
+        # (chatgpt.com/backend-api) which accepts ChatGPT session tokens.
+        # Falls back to standard OpenAI API when using an API key.
+        # Refreshes the access token in-memory if it has expired.
+        if model_provider == LlmProviderNames.OPENAI_CODEX:
+            from onyx.llm.well_known_providers.constants import (
+                OPENAI_CODEX_ACCESS_TOKEN_KEY,
+                OPENAI_CODEX_REFRESH_TOKEN_KEY,
+                OPENAI_CODEX_TOKEN_EXPIRES_AT_KEY,
+            )
+
+            self._custom_llm_provider = "openai"
+            if self._custom_config and OPENAI_CODEX_ACCESS_TOKEN_KEY in self._custom_config:
+                access_token = self._custom_config[OPENAI_CODEX_ACCESS_TOKEN_KEY]
+                refresh_token = self._custom_config.get(OPENAI_CODEX_REFRESH_TOKEN_KEY)
+                expires_at_str = self._custom_config.get(OPENAI_CODEX_TOKEN_EXPIRES_AT_KEY)
+
+                token_expired = False
+                if expires_at_str:
+                    try:
+                        import time
+
+                        token_expired = float(expires_at_str) < time.time()
+                    except (ValueError, TypeError):
+                        pass
+
+                if token_expired and refresh_token:
+                    try:
+                        from onyx.server.manage.llm.codex_oauth import (
+                            refresh_access_token,
+                        )
+
+                        token_response = refresh_access_token(refresh_token)
+                        access_token = token_response.access_token
+                        # Update in-memory custom_config for potential reuse
+                        self._custom_config[OPENAI_CODEX_ACCESS_TOKEN_KEY] = (
+                            token_response.access_token
+                        )
+                        if token_response.refresh_token:
+                            self._custom_config[OPENAI_CODEX_REFRESH_TOKEN_KEY] = (
+                                token_response.refresh_token
+                            )
+                        import time
+
+                        self._custom_config[OPENAI_CODEX_TOKEN_EXPIRES_AT_KEY] = str(
+                            time.time() + token_response.expires_in
+                        )
+                        logger.info("Codex OAuth access token refreshed in-memory")
+
+                        # Persist refreshed tokens back to the database
+                        try:
+                            from onyx.db.engine.sql_engine import (
+                                get_session_with_current_tenant,
+                            )
+                            from onyx.db.llm import fetch_existing_llm_provider
+
+                            with get_session_with_current_tenant() as db_session:
+                                provider_model = fetch_existing_llm_provider(
+                                    name=self._model_provider, db_session=db_session
+                                )
+                                if provider_model is not None:
+                                    updated_config = dict(
+                                        provider_model.custom_config or {}
+                                    )
+                                    updated_config[OPENAI_CODEX_ACCESS_TOKEN_KEY] = (
+                                        self._custom_config[OPENAI_CODEX_ACCESS_TOKEN_KEY]
+                                    )
+                                    if token_response.refresh_token:
+                                        updated_config[OPENAI_CODEX_REFRESH_TOKEN_KEY] = (
+                                            self._custom_config[
+                                                OPENAI_CODEX_REFRESH_TOKEN_KEY
+                                            ]
+                                        )
+                                    updated_config[OPENAI_CODEX_TOKEN_EXPIRES_AT_KEY] = (
+                                        self._custom_config[
+                                            OPENAI_CODEX_TOKEN_EXPIRES_AT_KEY
+                                        ]
+                                    )
+                                    provider_model.custom_config = updated_config
+                                    db_session.commit()
+                                    logger.info(
+                                        "Codex OAuth tokens persisted to database"
+                                    )
+                        except Exception:
+                            logger.warning(
+                                "Failed to persist refreshed Codex OAuth tokens "
+                                "to database; in-memory tokens will still be used"
+                            )
+                    except Exception:
+                        logger.warning(
+                            "Failed to refresh Codex OAuth token, "
+                            "using existing access token"
+                        )
+
+                self._api_key = access_token
+
+        # Bifrost: OpenAI-compatible proxy that expects model names in
+        # provider/model format (e.g. "anthropic/claude-sonnet-4-6").
+        # We route through LiteLLM's openai provider with the Bifrost base URL,
+        # and ensure /v1 is appended.
+        if model_provider == LlmProviderNames.BIFROST:
+            self._custom_llm_provider = "openai"
             if self._api_base is not None:
                 base = self._api_base.rstrip("/")
                 self._api_base = base if base.endswith("/v1") else f"{base}/v1"
@@ -456,21 +558,22 @@ class LitellmLLM(LLM):
         optional_kwargs: dict[str, Any] = {}
 
         # Model name
-        is_openai_compatible_proxy = self._model_provider in (
-            LlmProviderNames.BIFROST,
-            LlmProviderNames.OPENAI_COMPATIBLE,
-        )
+        is_bifrost = self._model_provider == LlmProviderNames.BIFROST
+        is_openai_compatible = self._model_provider == LlmProviderNames.OPENAI_COMPATIBLE
+        is_google_ai_studio = self._model_provider == LlmProviderNames.GOOGLE_AI_STUDIO
+        is_openai_codex = self._model_provider == LlmProviderNames.OPENAI_CODEX
         model_provider = (
             f"{self.config.model_provider}/responses"
             if is_openai_model  # Uses litellm's completions -> responses bridge
             else self.config.model_provider
         )
-        if is_openai_compatible_proxy:
-            # OpenAI-compatible proxies (Bifrost, generic OpenAI-compatible
-            # servers) expect model names sent directly to their endpoint.
-            # We use custom_llm_provider="openai" so LiteLLM doesn't try
-            # to route based on the provider prefix.
+        if is_bifrost or is_openai_compatible or is_openai_codex:
+            # These providers use custom_llm_provider="openai" so we pass
+            # the model name directly without a provider prefix.
             model = self.config.deployment_name or self.config.model_name
+        elif is_google_ai_studio:
+            # Google AI Studio uses LiteLLM's gemini/ prefix
+            model = f"gemini/{self.config.deployment_name or self.config.model_name}"
         else:
             model = f"{model_provider}/{self.config.deployment_name or self.config.model_name}"
 
@@ -560,14 +663,11 @@ class LitellmLLM(LLM):
         if structured_response_format:
             optional_kwargs["response_format"] = structured_response_format
 
-        if (
-            not (is_claude_model or is_ollama or is_mistral)
-            or is_openai_compatible_proxy
-        ):
+        if not (is_claude_model or is_ollama or is_mistral) or is_bifrost or is_openai_compatible or is_openai_codex:
             # Litellm bug: tool_choice is dropped silently if not specified here for OpenAI
             # However, this param breaks Anthropic and Mistral models,
             # so it must be conditionally included unless the request is
-            # routed through Bifrost's OpenAI-compatible endpoint.
+            # routed through an OpenAI-compatible endpoint (Bifrost, Z.AI, Codex).
             # Additionally, tool_choice is not supported by Ollama and causes warnings if included.
             # See also, https://github.com/ollama/ollama/issues/11171
             optional_kwargs["allowed_openai_params"] = ["tool_choice"]

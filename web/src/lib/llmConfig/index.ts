@@ -115,6 +115,24 @@ const PROVIDERS: Record<string, ProviderEntry> = {
     companyName: "OpenAI-Compatible",
     Modal: OpenAICompatibleModal,
   },
+  [LLMProviderName.GOOGLE_AI_STUDIO]: {
+    icon: SvgGemini,
+    productName: "Gemini",
+    companyName: "Google AI Studio",
+    Modal: CustomModal,
+  },
+  [LLMProviderName.OPENAI_CODEX]: {
+    icon: SvgOpenai,
+    productName: "OpenAI Codex",
+    companyName: "OpenAI",
+    Modal: CustomModal,
+  },
+  [LLMProviderName.CLAUDE_CODE_CLI]: {
+    icon: SvgClaude,
+    productName: "Claude Code",
+    companyName: "Anthropic",
+    Modal: CustomModal,
+  },
   [LLMProviderName.CUSTOM]: {
     icon: SvgServer,
     productName: "Custom Models",
