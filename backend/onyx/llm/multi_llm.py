@@ -678,7 +678,7 @@ class LitellmLLM(LLM):
             # Litellm bug: tool_choice is dropped silently if not specified here for OpenAI
             # However, this param breaks Anthropic and Mistral models,
             # so it must be conditionally included unless the request is
-            # routed through an OpenAI-compatible endpoint (Bifrost, Z.AI, Codex).
+            # routed through an OpenAI-compatible endpoint (Bifrost, OpenAI-Compatible, Codex).
             # Additionally, tool_choice is not supported by Ollama and causes warnings if included.
             # See also, https://github.com/ollama/ollama/issues/11171
             optional_kwargs["allowed_openai_params"] = ["tool_choice"]
