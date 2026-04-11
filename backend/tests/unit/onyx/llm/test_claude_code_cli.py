@@ -102,8 +102,8 @@ def test_invoke_command_uses_dangerously_skip_permissions(
 
 
 @patch("onyx.llm.claude_code_cli.subprocess.run")
-@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value=None)
-def test_invoke_command_disables_builtin_tools_by_default(
+@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value="/tmp/mcp.json")
+def test_invoke_command_disables_builtin_tools_when_mcp_available(
     _mock_mcp: MagicMock, mock_run: MagicMock
 ) -> None:
     mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
@@ -119,6 +119,22 @@ def test_invoke_command_disables_builtin_tools_by_default(
 
 @patch("onyx.llm.claude_code_cli.subprocess.run")
 @patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value=None)
+def test_invoke_command_keeps_builtin_tools_when_no_mcp(
+    _mock_mcp: MagicMock, mock_run: MagicMock
+) -> None:
+    """When MCP is unavailable, built-in WebSearch/WebFetch must stay enabled
+    so the model still has web-search capability."""
+    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+    cli = _make_cli()
+
+    cli.invoke([UserMessage(content="hello")])
+
+    cmd = mock_run.call_args[0][0]
+    assert "--disallowedTools" not in cmd
+
+
+@patch("onyx.llm.claude_code_cli.subprocess.run")
+@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value="/tmp/mcp.json")
 def test_invoke_command_disable_builtin_tools_toggle_off(
     _mock_mcp: MagicMock, mock_run: MagicMock
 ) -> None:
@@ -269,7 +285,7 @@ def test_stream_command_has_phase2_flags() -> None:
     ) as mock_popen:
         with patch(
             "onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config",
-            return_value=None,
+            return_value="/tmp/mcp.json",
         ):
             list(_make_cli().stream([UserMessage(content="hi")]))
 

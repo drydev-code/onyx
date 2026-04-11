@@ -96,6 +96,8 @@ _CLAUDE_CODE_TOOL_BRIDGE: dict[str, str] = {
     # convention; verify the exact key if additional Onyx MCP tools are
     # exposed.
     "mcp__onyx__search_indexed_documents": CATEGORY_INTERNAL_SEARCH,
+    "mcp__onyx__search_web": CATEGORY_INTERNET_SEARCH,
+    "mcp__onyx__open_urls": CATEGORY_FETCH,
 }
 
 
@@ -406,9 +408,6 @@ class ClaudeCodeCLI(LLM):
             "-p", "-",  # read prompt from stdin
         ]
 
-        if self._disable_builtin_tools:
-            cmd.extend(["--disallowedTools", _DISABLED_BUILTIN_TOOLS])
-
         if self._should_pass_api_key():
             cmd.extend(["--api-key", self._api_key])  # type: ignore[arg-type]
 
@@ -420,6 +419,13 @@ class ClaudeCodeCLI(LLM):
         mcp_config_path = self._write_mcp_config()
         if mcp_config_path:
             cmd.extend(["--mcp-config", mcp_config_path])
+
+        # Only disallow built-in WebSearch/WebFetch when the Onyx MCP server
+        # is actually available to provide replacements.  Without MCP tools
+        # the model would have no web-search capability at all, causing it
+        # to tell users "I don't have web search".
+        if self._disable_builtin_tools and mcp_config_path:
+            cmd.extend(["--disallowedTools", _DISABLED_BUILTIN_TOOLS])
 
         env = self._build_env()
         priv_kwargs = self._subprocess_privilege_kwargs()
@@ -574,9 +580,6 @@ class ClaudeCodeCLI(LLM):
             "-p", "-",  # read prompt from stdin
         ]
 
-        if self._disable_builtin_tools:
-            cmd.extend(["--disallowedTools", _DISABLED_BUILTIN_TOOLS])
-
         if self._should_pass_api_key():
             cmd.extend(["--api-key", self._api_key])  # type: ignore[arg-type]
 
@@ -590,6 +593,13 @@ class ClaudeCodeCLI(LLM):
         mcp_config_path = self._write_mcp_config()
         if mcp_config_path:
             cmd.extend(["--mcp-config", mcp_config_path])
+
+        # Only disallow built-in WebSearch/WebFetch when the Onyx MCP server
+        # is actually available to provide replacements.  Without MCP tools
+        # the model would have no web-search capability at all, causing it
+        # to tell users "I don't have web search".
+        if self._disable_builtin_tools and mcp_config_path:
+            cmd.extend(["--disallowedTools", _DISABLED_BUILTIN_TOOLS])
 
         env = self._build_env()
         priv_kwargs = self._subprocess_privilege_kwargs()
