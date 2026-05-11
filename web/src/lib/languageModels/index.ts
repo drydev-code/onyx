@@ -33,6 +33,7 @@ import LiteLLMProxyModal from "@/sections/modals/languageModels/LiteLLMProxyModa
 import BifrostModal from "@/sections/modals/languageModels/BifrostModal";
 import OpenAICompatibleModal from "@/sections/modals/languageModels/OpenAICompatibleModal";
 import ZAIModal from "@/sections/modals/languageModels/ZAIModal";
+import CodexModal from "@/sections/modals/languageModels/CodexModal";
 
 // ─── Text (LLM) providers ────────────────────────────────────────────────────
 
@@ -132,7 +133,7 @@ const PROVIDERS: Record<string, ProviderEntry> = {
     icon: SvgOpenai,
     productName: "OpenAI Codex",
     companyName: "OpenAI",
-    Modal: CustomModal,
+    Modal: CodexModal,
   },
   [LLMProviderName.CLAUDE_CODE_CLI]: {
     icon: SvgClaude,
