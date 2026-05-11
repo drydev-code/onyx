@@ -74,7 +74,7 @@ COPY ./model_server /app/model_server
 ENV PYTHONPATH=/app
 
 # Default ONYX_VERSION, typically overriden during builds by GitHub Actions.
-ARG ONYX_VERSION=0.0.0-dev
+ARG ONYX_VERSION="3.2.0 (drydev)"
 ENV ONYX_VERSION=${ONYX_VERSION}
 
 CMD ["uvicorn", "model_server.main:app", "--host", "0.0.0.0", "--port", "9000"]
