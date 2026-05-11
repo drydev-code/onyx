@@ -228,6 +228,65 @@ Show all options:
 
 This makes the integration branch reproducible instead of hand-maintained.
 
+## Deploying `integration/merged` to the Onyx Server
+
+The `deploy-dev.sh` script in the repo root builds and deploys the fork to the
+onyx server (`onyx.drydev.de`).
+
+### Default flow: server-side build
+
+By default, `./deploy-dev.sh` does **not** ship images over the wire — it SSHes
+to the server, pulls the latest `integration/merged`, and runs the Docker
+build there. A backend code-only change rebuilds in ~30 seconds on top of the
+cached `craft-base` layer; a previous `docker save | ssh docker load` cycle
+took 10+ minutes.
+
+```bash
+./deploy-dev.sh              # backend + web
+./deploy-dev.sh backend      # backend only
+./deploy-dev.sh web          # web only
+./deploy-dev.sh reset        # wipe craft-base + craft-latest on the server
+./deploy-dev.sh local        # legacy: build locally, ship via docker save
+```
+
+The server-side path will:
+
+1. SSH to `root@onyx`, install `git` via `apk` if missing, and clone
+   `https://github.com/drydev-code/onyx` into `/var/onyx/onyx_data/onyx-src`
+   on the first run.
+2. `git fetch origin && git reset --hard origin/$DEPLOY_BRANCH`
+   (`DEPLOY_BRANCH` defaults to `integration/merged`).
+3. Build the backend on `Dockerfile.dev` over the immutable
+   `onyxdotapp/onyx-backend:craft-base` tag — if that base image is missing on
+   the server, the script does the full `Dockerfile` build once before
+   continuing.
+4. Build the web on `Dockerfile.dev`.
+5. `cd /var/onyx/onyx_data/deployment && docker compose up -d --force-recreate
+   api_server background web_server && docker compose restart nginx`.
+
+Because the server pulls from `origin`, **commit and push before deploying**
+— the script does not upload your working tree.
+
+To deploy a non-default branch (e.g. for testing a feature in isolation):
+
+```bash
+DEPLOY_BRANCH=feature/glm ./deploy-dev.sh both
+```
+
+### When to use `local`
+
+Use `./deploy-dev.sh local` when the server is resource-constrained or you
+need to ship an uncommitted local change for debugging. It runs the old flow:
+builds both images locally in parallel, ships them with `docker save | ssh
+docker load`, then restarts services.
+
+### When to use `reset`
+
+`./deploy-dev.sh reset` removes both `craft-base` and `craft-latest` on the
+server. Use it when the base image has drifted (Python deps changed) or after
+~100 `Dockerfile.dev` iterations to keep the image layer count below Docker's
+~125-layer cap. The next deploy will do the slow full backend rebuild.
+
 ## Recommended Default Policy
 
 Use this as the default operating model:
