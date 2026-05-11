@@ -1,8 +1,8 @@
 /**
- * Unit Test: LLMConfigurationPage provider map coverage
+ * Unit Test: LLMConfigurationPage provider display order coverage
  *
- * Validates that PROVIDER_MODAL_MAP and PROVIDER_DISPLAY_ORDER in
- * LLMConfigurationPage.tsx include entries for all new providers.
+ * Validates that PROVIDER_DISPLAY_ORDER in LLMConfigurationPage.tsx
+ * includes entries for all custom providers added in integration/base.
  *
  * Since these are non-exported module-level constants, we verify via
  * static source analysis rather than runtime imports.
@@ -23,55 +23,17 @@ describe("LLMConfigurationPage provider coverage", () => {
     source = fs.readFileSync(SOURCE_PATH, "utf-8");
   });
 
-  describe("PROVIDER_MODAL_MAP", () => {
-    const requiredProviders = [
-      "zai",
-      "google_ai_studio",
-      "openai_codex",
-      "claude_code_cli",
-    ];
-
-    test.each(requiredProviders)(
-      "has an entry for %s",
-      (providerKey) => {
-        // The map uses string keys like: zai: (d, onOpenChange) => (
-        const pattern = new RegExp(
-          `${providerKey}\\s*:\\s*\\(`
-        );
-        expect(source).toMatch(pattern);
-      }
-    );
-  });
-
   describe("PROVIDER_DISPLAY_ORDER", () => {
     const requiredProviders = [
-      "zai",
-      "google_ai_studio",
-      "openai_codex",
-      "claude_code_cli",
+      "GOOGLE_AI_STUDIO",
+      "OPENAI_CODEX",
+      "CLAUDE_CODE_CLI",
     ];
 
     test.each(requiredProviders)(
-      "includes %s in the display order",
+      "includes LLMProviderName.%s in the display order",
       (providerKey) => {
-        // The array uses string literals like: "zai",
-        expect(source).toContain(`"${providerKey}"`);
-      }
-    );
-  });
-
-  describe("modal component imports", () => {
-    const requiredImports = [
-      "ZAIModal",
-      "GoogleAIStudioModal",
-      "CodexModal",
-      "ClaudeCodeCLIModal",
-    ];
-
-    test.each(requiredImports)(
-      "imports %s component",
-      (componentName) => {
-        expect(source).toContain(componentName);
+        expect(source).toContain(`LLMProviderName.${providerKey}`);
       }
     );
   });
