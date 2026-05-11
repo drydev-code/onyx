@@ -70,6 +70,11 @@ jest.mock("@/sections/modals/llmConfig/BifrostModal", () => ({
   default: () => <div data-testid="BifrostModal" />,
 }));
 
+jest.mock("@/sections/modals/llmConfig/ClaudeCodeCLIModal", () => ({
+  __esModule: true,
+  default: () => <div data-testid="ClaudeCodeCLIModal" />,
+}));
+
 jest.mock("@/sections/modals/llmConfig/CodexModal", () => ({
   __esModule: true,
   default: () => <div data-testid="CodexModal" />,
@@ -106,6 +111,11 @@ function makeProvider(
 
 describe("getModalForExistingProvider", () => {
   const cases: [string, Partial<LLMProviderView>, string][] = [
+    [
+      "routes CLAUDE_CODE_CLI to ClaudeCodeCLIModal",
+      { provider: LLMProviderName.CLAUDE_CODE_CLI },
+      "ClaudeCodeCLIModal",
+    ],
     [
       "routes OPENAI_CODEX to CodexModal",
       { provider: LLMProviderName.OPENAI_CODEX },
