@@ -289,21 +289,18 @@ def get_google_ai_studio_model_names() -> list[str]:
 
 
 def get_openai_codex_model_names() -> list[str]:
-    """Get OpenAI Codex model names (uses same models as OpenAI)."""
+    """Get OpenAI Codex CLI model names (models the @openai/codex CLI supports)."""
     return [
-        "gpt-5.4",
-        "gpt-5.2",
-        "o4-mini",
-        "o3",
-        "o3-mini",
-        "gpt-4.1",
-        "gpt-4.1-mini",
+        "gpt-5.1-codex",
+        "gpt-5.1",
+        "gpt-5.1-codex-mini",
     ]
 
 
 def get_claude_code_cli_model_names() -> list[str]:
     """Get Claude Code CLI model names (models available via the CLI)."""
     return [
+        "claude-opus-4-7",
         "claude-opus-4-6",
         "claude-sonnet-4-6",
         "claude-haiku-4-5",
