@@ -21,6 +21,7 @@ from onyx.configs.app_configs import PROMPT_CACHE_CHAT_HISTORY
 from onyx.configs.constants import MessageType
 from onyx.context.search.models import SearchDoc
 from onyx.file_store.models import ChatFileType
+from onyx.llm.cli_tool_bridge import emit_bridge_packets
 from onyx.llm.constants import LlmProviderNames
 from onyx.llm.interfaces import LanguageModelInput
 from onyx.llm.interfaces import LLM
@@ -1022,6 +1023,14 @@ def run_llm_step_pkt_generator(
     arg_parsers: dict[int, Parser] = {}
     reasoning_start = False
     answer_start = False
+    # Track the (turn_index, sub_turn_index) pair under which the most recent
+    # AgentResponseStart was emitted. Each subsequent text burst that lands on
+    # a different turn/sub-turn needs its own AgentResponseStart so the
+    # frontend's packet processor (which only promotes a group to a "display
+    # group" when it contains a MESSAGE_START) can render the text. Without
+    # this, any text emitted after _close_reasoning_if_active increments
+    # turn_index was silently dropped by the UI.
+    last_answer_start_placement: tuple[int, int | None] | None = None
     accumulated_reasoning = ""
     accumulated_answer = ""
     accumulated_raw_answer = ""
@@ -1096,6 +1105,7 @@ def run_llm_step_pkt_generator(
             nonlocal accumulated_answer
             nonlocal accumulated_reasoning
             nonlocal answer_start
+            nonlocal last_answer_start_placement
             nonlocal reasoning_start
             nonlocal turn_index
             nonlocal sub_turn_index
@@ -1122,21 +1132,40 @@ def run_llm_step_pkt_generator(
             # Normal flow for AUTO or NONE tool choice
             yield from _close_reasoning_if_active()
 
-            if not answer_start:
-                # Store pre-answer processing time in state container for save_chat
-                if state_container and pre_answer_processing_time is not None:
-                    state_container.set_pre_answer_processing_time(
-                        pre_answer_processing_time
+            # Emit an AgentResponseStart whenever this chunk's placement differs
+            # from the last AgentResponseStart we sent. Providers like Claude
+            # Code CLI interleave reasoning with text, which causes
+            # _close_reasoning_if_active to increment turn_index between text
+            # bursts — without a new AgentResponseStart at the new turn, the
+            # frontend packet processor never marks the new turn as a display
+            # group and the text is dropped from the live render.
+            current_placement_key: tuple[int, int | None] = (
+                turn_index,
+                sub_turn_index,
+            )
+            if last_answer_start_placement != current_placement_key:
+                # Only attach final_documents / pre_answer_processing_time on
+                # the VERY FIRST AgentResponseStart for this LLM step; later
+                # turn-transition starts are pure section markers.
+                if not answer_start:
+                    if state_container and pre_answer_processing_time is not None:
+                        state_container.set_pre_answer_processing_time(
+                            pre_answer_processing_time
+                        )
+                    yield Packet(
+                        placement=_current_placement(),
+                        obj=AgentResponseStart(
+                            final_documents=final_documents,
+                            pre_answer_processing_seconds=pre_answer_processing_time,
+                        ),
                     )
-
-                yield Packet(
-                    placement=_current_placement(),
-                    obj=AgentResponseStart(
-                        final_documents=final_documents,
-                        pre_answer_processing_seconds=pre_answer_processing_time,
-                    ),
-                )
-                answer_start = True
+                    answer_start = True
+                else:
+                    yield Packet(
+                        placement=_current_placement(),
+                        obj=AgentResponseStart(),
+                    )
+                last_answer_start_placement = current_placement_key
 
             if citation_processor:
                 yield from _emit_citation_results(
@@ -1240,7 +1269,36 @@ def run_llm_step_pkt_generator(
             if delta.tool_calls:
                 yield from _close_reasoning_if_active()
 
+                cli_bridge = llm.config.cli_tool_bridge
+
                 for tool_call_delta in delta.tool_calls:
+                    tool_name = (
+                        tool_call_delta.function.name
+                        if tool_call_delta.function
+                        else None
+                    )
+                    bridge_category = (
+                        cli_bridge.get(tool_name)
+                        if cli_bridge and tool_name
+                        else None
+                    )
+                    if bridge_category:
+                        # CLI-self-executed tool: emit rich packets directly
+                        # and skip the kickoff path so the tool is not
+                        # double-executed by Onyx.
+                        arguments = (
+                            tool_call_delta.function.arguments
+                            if tool_call_delta.function
+                            else None
+                        )
+                        yield from emit_bridge_packets(
+                            category=bridge_category,
+                            tool_name=tool_name,
+                            arguments=arguments,
+                            placement=_current_placement(),
+                        )
+                        continue
+
                     # maybe_emit depends and update being called first and attaching the delta
                     _update_tool_call_with_delta(id_to_tool_call_map, tool_call_delta)
                     yield from maybe_emit_argument_delta(

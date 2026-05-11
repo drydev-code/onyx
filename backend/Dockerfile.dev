@@ -1,0 +1,31 @@
+# Dockerfile.dev - Fast rebuild for code-only changes
+#
+# Uses the full production image as base (with all deps pre-installed)
+# and only overlays the application code. This makes builds take seconds
+# instead of minutes, and push sizes are ~50MB instead of ~2GB.
+#
+# Usage:
+#   docker build -t onyxdotapp/onyx-backend:craft-latest \
+#     --build-arg BASE_IMAGE=onyxdotapp/onyx-backend:craft-latest \
+#     -f Dockerfile.dev .
+#
+# Prerequisites:
+#   The base image must already exist (built from the full Dockerfile).
+#   First time: docker build -t onyxdotapp/onyx-backend:craft-latest -f Dockerfile .
+#   After that: docker build -f Dockerfile.dev . (seconds, not minutes)
+
+ARG BASE_IMAGE=onyxdotapp/onyx-backend:craft-latest
+FROM ${BASE_IMAGE}
+
+# Bust cache on every build to ensure latest code is copied
+ARG CACHEBUST=0
+
+# Only copy application code - deps are already in the base image
+COPY --chown=onyx:onyx ./onyx /app/onyx
+COPY --chown=onyx:onyx ./ee /app/ee
+COPY --chown=onyx:onyx ./shared_configs /app/shared_configs
+COPY --chown=onyx:onyx ./alembic /app/alembic
+COPY --chown=onyx:onyx ./alembic_tenants /app/alembic_tenants
+COPY --chown=onyx:onyx ./alembic.ini /app/alembic.ini
+COPY --chown=onyx:onyx ./scripts /app/scripts
+RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/setup_craft_templates.sh 2>/dev/null || true
