@@ -17,6 +17,7 @@ DEFAULT_FEATURE_BRANCHES=(
     "feature/imagerouter"
     "feature/codex"
     "feature/claude-code"
+    "feature/branding"
 )
 
 usage() {
@@ -53,6 +54,7 @@ Default feature merge order:
   4. feature/imagerouter
   5. feature/codex
   6. feature/claude-code
+  7. feature/branding
 EOF
 }
 
