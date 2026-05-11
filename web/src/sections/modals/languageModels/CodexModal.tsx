@@ -8,8 +8,8 @@ import {
   useInitialValues,
   buildValidationSchema,
   BaseLLMFormValues,
-} from "@/sections/modals/llmConfig/utils";
-import { submitProvider } from "@/sections/modals/llmConfig/svc";
+} from "@/sections/modals/languageModels/utils";
+import { submitProvider } from "@/sections/modals/languageModels/svc";
 import { LLMProviderConfiguredSource } from "@/lib/analytics";
 import {
   APIKeyField,
@@ -17,9 +17,9 @@ import {
   DisplayNameField,
   ModelAccessField,
   ModalWrapper,
-} from "@/sections/modals/llmConfig/shared";
-import * as InputLayouts from "@/layouts/input-layouts";
-import { refreshLlmProviderCaches } from "@/lib/llmConfig/cache";
+} from "@/sections/modals/languageModels/shared";
+import { InputDivider } from "@opal/layouts";
+import { refreshLlmProviderCaches } from "@/lib/languageModels/cache";
 import { toast } from "@/hooks/useToast";
 
 interface CodexFormValues extends BaseLLMFormValues {
@@ -303,22 +303,22 @@ export default function CodexModal({
     >
       <OAuthSection />
 
-      <InputLayouts.FieldSeparator />
+      <InputDivider />
       <APIKeyField providerName="OpenAI (optional, alternative to OAuth)" />
 
       {!isOnboarding && (
         <>
-          <InputLayouts.FieldSeparator />
+          <InputDivider />
           <DisplayNameField disabled={!!existingLlmProvider} />
         </>
       )}
 
-      <InputLayouts.FieldSeparator />
+      <InputDivider />
       <ModelSelectionField shouldShowAutoUpdateToggle={true} />
 
       {!isOnboarding && (
         <>
-          <InputLayouts.FieldSeparator />
+          <InputDivider />
           <ModelAccessField />
         </>
       )}
