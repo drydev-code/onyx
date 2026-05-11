@@ -291,6 +291,9 @@ def get_google_ai_studio_model_names() -> list[str]:
 def get_openai_codex_model_names() -> list[str]:
     """Get OpenAI Codex CLI model names (models the @openai/codex CLI supports)."""
     return [
+        "gpt-5.5-codex",
+        "gpt-5.5",
+        "gpt-5.5-codex-mini",
         "gpt-5.1-codex",
         "gpt-5.1",
         "gpt-5.1-codex-mini",

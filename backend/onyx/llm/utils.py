@@ -938,7 +938,7 @@ def model_needs_formatting_reenabled(model_name: str) -> bool:
     # for OpenAI reasoning models to have correct markdown generation
 
     # Models that need formatting re-enabled
-    model_names = ["gpt-5.1", "gpt-5", "o3", "o1"]
+    model_names = ["gpt-5.5", "gpt-5.1", "gpt-5", "o3", "o1"]
 
     # Pattern matches if any of these model names appear with word boundaries
     # Word boundaries include: start/end of string, space, hyphen, or forward slash
