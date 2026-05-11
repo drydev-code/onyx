@@ -41,6 +41,9 @@ VERTEX_AUTH_METHOD_WORKLOAD_IDENTITY = "workload_identity"
 
 OPENAI_COMPATIBLE_PROVIDER_NAME = "openai_compatible"
 
+ZAI_PROVIDER_NAME = "zai"
+ZAI_DEFAULT_API_BASE = "https://api.z.ai/api/coding/paas/v4"
+
 GOOGLE_AI_STUDIO_PROVIDER_NAME = "google_ai_studio"
 
 OPENAI_CODEX_PROVIDER_NAME = "openai_codex"

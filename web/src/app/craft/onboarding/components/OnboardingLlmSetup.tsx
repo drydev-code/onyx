@@ -8,7 +8,7 @@ import { Tooltip } from "@opal/components";
 import { LLMProviderName, LLMProviderDescriptor } from "@/interfaces/llm";
 
 // Provider configurations
-export type ProviderKey = "anthropic" | "openai" | "openrouter";
+export type ProviderKey = "anthropic" | "openai" | "openrouter" | "zai";
 
 interface ModelOption {
   name: string;
@@ -70,6 +70,18 @@ export const PROVIDERS: ProviderConfig[] = [
     apiKeyPlaceholder: "sk-or-...",
     apiKeyUrl: "https://openrouter.ai/keys",
     apiKeyLabel: "OpenRouter Dashboard",
+  },
+  {
+    key: "zai",
+    label: "Z.AI",
+    providerName: LLMProviderName.ZAI,
+    models: [
+      { name: "glm-5.1", label: "GLM 5.1", recommended: true },
+      { name: "glm-5", label: "GLM 5" },
+    ],
+    apiKeyPlaceholder: "zai-...",
+    apiKeyUrl: "https://open.z.ai/",
+    apiKeyLabel: "Z.AI Dashboard",
   },
 ];
 

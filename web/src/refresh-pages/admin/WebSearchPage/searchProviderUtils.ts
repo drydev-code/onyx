@@ -12,7 +12,8 @@ export type WebSearchProviderType =
   | "serper"
   | "exa"
   | "searxng"
-  | "brave";
+  | "brave"
+  | "glm";
 
 export const SEARCH_PROVIDER_DETAILS: Record<
   WebSearchProviderType,
@@ -52,6 +53,12 @@ export const SEARCH_PROVIDER_DETAILS: Record<
     helper: "Connect to Google PSE to set up web search.",
     logo: SvgGoogle,
     apiKeyUrl: "https://programmablesearchengine.google.com/controlpanel/all",
+  },
+  glm: {
+    label: "GLM",
+    subtitle: "Z.AI Web Search",
+    helper: "Connect to GLM Web Search (Z.AI) to set up web search.",
+    apiKeyUrl: "https://z.ai/subscribe",
   },
   searxng: {
     label: "SearXNG",
@@ -114,6 +121,10 @@ const SEARCH_PROVIDER_CAPABILITIES: Record<
     requiredConfigKeys: [],
   },
   brave: {
+    requiresApiKey: true,
+    requiredConfigKeys: [],
+  },
+  glm: {
     requiresApiKey: true,
     requiredConfigKeys: [],
   },
@@ -233,6 +244,13 @@ export function buildSearchProviderConfig(
   const value = searchEngineIdOrBaseUrl.trim();
 
   const config: Record<string, string> = {};
+
+  // GLM uses configValue for transport mode (rest/mcp)
+  if (providerType === "glm" && value) {
+    config["transport"] = value;
+    return config;
+  }
+
   if (!value || caps.requiredConfigKeys.length === 0) {
     return config;
   }
@@ -253,6 +271,11 @@ export function getSingleConfigFieldValueForForm(
   providerType: string,
   provider: SearchProviderLike
 ): string {
+  // GLM stores transport mode in config
+  if (providerType === "glm") {
+    return provider?.config?.transport || "rest";
+  }
+
   const caps = getCapabilities(providerType);
   if (caps.requiredConfigKeys.length === 0) {
     return "";
