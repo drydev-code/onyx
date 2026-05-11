@@ -78,7 +78,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 ARG NEXT_PUBLIC_THEME
 ENV NEXT_PUBLIC_THEME=${NEXT_PUBLIC_THEME}
 
-ARG ONYX_VERSION=0.0.0-dev
+ARG ONYX_VERSION="3.2.0 (drydev)"
 ENV ONYX_VERSION=${ONYX_VERSION}
 
 CMD ["node", "server.js"]
