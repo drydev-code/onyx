@@ -116,6 +116,70 @@ _CODEX_ANSWER_TEXT_FIELDS: tuple[str, ...] = (
 )
 
 
+def _build_codex_no_answer_message(
+    *,
+    model_name: str,
+    error_messages: list[str],
+    observed_events: list[tuple[str, str]],
+    non_json_lines: list[str],
+    stderr_text: str,
+    exit_code: int | None,
+    event_count: int,
+) -> str:
+    """Compose the fallback delta.content shown when codex emits no answer.
+
+    The message is split in two parts so the user gets a clear top-line
+    explanation and a collapsed ``<details>`` block with diagnostic data
+    (CLI exit code, observed event shapes, stderr tail, non-JSON stdout)
+    that's actionable for a maintainer without overwhelming the chat.
+    """
+    if error_messages:
+        headline = (
+            "The Codex CLI did not produce a final answer for model "
+            f"`{model_name}`. Reported errors:\n\n"
+            + "\n".join(f"- {m}" for m in error_messages)
+        )
+    else:
+        headline = (
+            f"The Codex CLI returned no answer for model `{model_name}`. "
+            "The model may not be available on this account, or the CLI "
+            "version may emit an unsupported event format. "
+            "Try a different model (e.g. `gpt-5.5-codex`)."
+        )
+
+    observed_unique = sorted(
+        {
+            (f"{e}:{i}" if i else e)
+            for e, i in observed_events
+            if e or i
+        }
+    )
+
+    details_lines: list[str] = ["**Codex CLI diagnostics:**"]
+    details_lines.append(f"- Exit code: `{exit_code}`")
+    details_lines.append(f"- JSON events received: `{event_count}`")
+    if observed_unique:
+        details_lines.append(
+            "- Observed event shapes: `"
+            + ", ".join(observed_unique)
+            + "`"
+        )
+    else:
+        details_lines.append("- Observed event shapes: _(none)_")
+    if non_json_lines:
+        joined = "\n".join(non_json_lines[-5:])
+        details_lines.append(
+            f"- Non-JSON stdout tail:\n```\n{joined}\n```"
+        )
+    if stderr_text:
+        details_lines.append(
+            f"- Stderr tail:\n```\n{stderr_text[-1500:].strip()}\n```"
+        )
+
+    diagnostics = "\n".join(details_lines)
+    return f"{headline}\n\n<details>\n<summary>Diagnostics</summary>\n\n{diagnostics}\n\n</details>"
+
+
 def _extract_codex_answer_text(item: dict[str, Any]) -> str:
     """Pull the assistant text out of an answer-like Codex item.
 
@@ -568,10 +632,33 @@ class CodexCLI(LLM):
         timer.daemon = True
         timer.start()
 
+        # Drain stderr in a background thread so we can include its
+        # contents in diagnostics even when the stream completes "cleanly"
+        # without yielding an answer. Without this, stderr is only read
+        # after proc.wait() returns, which means the fallback content
+        # would be yielded with no visibility into why codex failed.
+        stderr_lines: list[str] = []
+
+        def _drain_stderr() -> None:
+            assert proc.stderr is not None
+            try:
+                for line in proc.stderr:
+                    stderr_lines.append(line)
+            except Exception:  # noqa: BLE001 - stderr can be torn down on kill
+                pass
+
+        stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+        stderr_thread.start()
+
         final_usage: Usage | None = None
         event_count = 0
         answer_emitted = False
         error_messages: list[str] = []
+        # All distinct (event_type, item_type) pairs seen on stdout --
+        # used in the fallback diagnostic when no answer is produced so
+        # we can identify CLI versions that emit unknown event shapes.
+        observed_events: list[tuple[str, str]] = []
+        non_json_lines: list[str] = []
 
         try:
             assert proc.stdout is not None
@@ -583,13 +670,24 @@ class CodexCLI(LLM):
                 try:
                     event = json.loads(line)
                 except json.JSONDecodeError:
+                    # Some codex CLI failure modes (e.g. unsupported
+                    # model, auth issues hit before --json kicks in)
+                    # print plain-text errors to stdout. Keep them so
+                    # they can surface in the fallback diagnostic.
                     logger.debug("Codex non-JSON line: %s", line[:200])
+                    non_json_lines.append(line[:500])
                     continue
 
                 event_count += 1
+                event_type = event.get("type", "")
+                item_obj = event.get("item") or {}
+                item_type = (
+                    item_obj.get("type", "") if isinstance(item_obj, dict) else ""
+                )
+                observed_events.append((event_type, item_type))
 
                 # turn.completed carries cumulative usage.
-                if event.get("type") == "turn.completed":
+                if event_type == "turn.completed":
                     usage_data = event.get("usage") or {}
                     if usage_data:
                         final_usage = _build_codex_usage(usage_data)
@@ -604,12 +702,11 @@ class CodexCLI(LLM):
 
                 # Track error item messages so we can surface them as
                 # content if the stream never produced an answer.
-                item = event.get("item") or {}
                 if (
-                    event.get("type") == "item.completed"
-                    and item.get("type") == "error"
+                    event_type == "item.completed"
+                    and item_type == "error"
                 ):
-                    msg = item.get("message", "")
+                    msg = item_obj.get("message", "")
                     if msg and "OPENAI_BASE_URL" not in msg and not (
                         "deprecated" in msg.lower() and "features" in msg.lower()
                     ):
@@ -623,29 +720,37 @@ class CodexCLI(LLM):
             # If no agent_message-like item ever produced content, surface
             # something usable so the upstream LLM loop doesn't fail with
             # EmptyLLMResponseError. Prefer accumulated error messages;
-            # fall back to a generic explanation that names the model.
+            # fall back to a generic explanation that includes enough
+            # diagnostic detail (event shapes, stderr tail, exit code)
+            # to identify why codex stayed silent for this model.
             if not answer_emitted:
-                if error_messages:
-                    fallback_text = (
-                        "The Codex CLI did not produce a final answer. "
-                        "Reported errors:\n\n"
-                        + "\n".join(f"- {m}" for m in error_messages)
-                    )
-                else:
-                    fallback_text = (
-                        f"The Codex CLI returned no answer for model "
-                        f"'{self._model_name}'. The model may not be "
-                        "available on this account, or the CLI version "
-                        "may emit an unsupported event format. Check the "
-                        "Codex CLI logs and try a different model "
-                        "(e.g. gpt-5.5-codex)."
-                    )
+                # Wait briefly for the process + stderr drain to settle so
+                # we have an exit code and final stderr to include.
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+                stderr_thread.join(timeout=2)
+                stderr_text = "".join(stderr_lines)
+                fallback_text = _build_codex_no_answer_message(
+                    model_name=self._model_name,
+                    error_messages=error_messages,
+                    observed_events=observed_events,
+                    non_json_lines=non_json_lines,
+                    stderr_text=stderr_text,
+                    exit_code=proc.returncode,
+                    event_count=event_count,
+                )
                 logger.warning(
                     "Codex CLI stream produced no answer for model %s; "
-                    "surfacing fallback content (errors=%d, events=%d).",
+                    "exit_code=%s events=%d errors=%d observed=%s "
+                    "stderr_tail=%r",
                     self._model_name,
-                    len(error_messages),
+                    proc.returncode,
                     event_count,
+                    len(error_messages),
+                    sorted({f"{e}:{i}" for e, i in observed_events}),
+                    stderr_text[-500:] if stderr_text else "",
                 )
                 yield ModelResponseStream(
                     id=response_id,
@@ -668,9 +773,11 @@ class CodexCLI(LLM):
         finally:
             timer.cancel()
             logger.info(
-                "Codex CLI stream ended: %d events, timed_out=%s",
+                "Codex CLI stream ended: %d events, timed_out=%s, "
+                "observed=%s",
                 event_count,
                 timed_out.is_set(),
+                sorted({f"{e}:{i}" for e, i in observed_events}),
             )
             try:
                 proc.wait(timeout=5)
@@ -681,9 +788,10 @@ class CodexCLI(LLM):
                 )
                 proc.kill()
                 proc.wait(timeout=5)
-            stderr = proc.stderr.read() if proc.stderr else ""
+            stderr_thread.join(timeout=2)
+            stderr = "".join(stderr_lines)
             if stderr:
-                logger.info("Codex stderr: %s", stderr[:1000])
+                logger.info("Codex stderr: %s", stderr[:2000])
             if proc.returncode and proc.returncode != 0:
                 logger.warning(
                     "Codex CLI exited with code %d", proc.returncode
