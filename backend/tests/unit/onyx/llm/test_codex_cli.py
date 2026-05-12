@@ -367,6 +367,73 @@ def test_stream_no_answer_emitted_surfaces_fallback_content() -> None:
     assert chunks[-1].choice.finish_reason == "stop"
 
 
+def test_stream_no_answer_fallback_includes_diagnostics() -> None:
+    """The fallback message should include observed event shapes and
+    exit code so silent codex failures are debuggable from chat."""
+    cli = _make_cli()
+    chunks = _run_stream(
+        cli,
+        [
+            {"type": "thread.started", "thread_id": "t"},
+            {"type": "turn.started"},
+            {"type": "turn.completed", "usage": {"input_tokens": 1}},
+        ],
+    )
+
+    content = "".join(
+        c.choice.delta.content or "" for c in chunks if c.choice.delta.content
+    )
+    assert "Diagnostics" in content
+    assert "Exit code" in content
+    assert "Observed event shapes" in content
+    assert "thread.started" in content
+    assert "turn.started" in content
+
+
+def test_stream_no_answer_fallback_surfaces_non_json_stdout() -> None:
+    """Plain-text errors on stdout (e.g. unsupported model) must surface
+    in the diagnostic block so users can see why codex stayed silent."""
+    cli = _make_cli()
+    # Hand-craft stdout that mixes a non-JSON error line with a
+    # turn.completed event, simulating a codex CLI that prints a
+    # plain-text error before exiting normally.
+    raw_stdout = (
+        "ERROR: model 'gpt-5.5' is not available for this account\n"
+        + json.dumps({"type": "turn.completed", "usage": {"input_tokens": 0}})
+        + "\n"
+    )
+    proc = _make_proc(raw_stdout)
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc):
+        with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
+            chunks = list(cli.stream([UserMessage(content="hi")]))
+
+    content = "".join(
+        c.choice.delta.content or "" for c in chunks if c.choice.delta.content
+    )
+    assert "Non-JSON stdout tail" in content
+    assert "is not available" in content
+
+
+def test_stream_no_answer_fallback_surfaces_stderr() -> None:
+    """Stderr from codex (e.g. auth/login failures) must surface in the
+    diagnostic block of the fallback content."""
+    cli = _make_cli()
+    proc = _make_proc("")
+    proc.stderr = StringIO("ERROR: Codex login expired, please re-auth\n")
+    proc.returncode = 1
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc):
+        with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
+            chunks = list(cli.stream([UserMessage(content="hi")]))
+
+    content = "".join(
+        c.choice.delta.content or "" for c in chunks if c.choice.delta.content
+    )
+    assert "Stderr tail" in content
+    assert "login expired" in content
+    assert "Exit code" in content
+    assert "`1`" in content
+
+
 def test_stream_deprecated_openai_base_url_error_is_silent() -> None:
     cli = _make_cli()
     chunks = _run_stream(
