@@ -148,9 +148,14 @@ def test_stream_thread_and_turn_started_produce_no_output() -> None:
         ],
     )
 
-    # Only the final stop chunk
-    assert len(chunks) == 1
+    # No agent_message was emitted, so a fallback content chunk is
+    # surfaced before the final stop so the upstream LLM loop has
+    # something usable (avoids EmptyLLMResponseError).
     assert chunks[-1].choice.finish_reason == "stop"
+    content = "".join(
+        c.choice.delta.content or "" for c in chunks if c.choice.delta.content
+    )
+    assert "no answer" in content.lower()
 
 
 def test_stream_command_started_yields_reasoning_header() -> None:
@@ -255,6 +260,113 @@ def test_stream_agent_message_yields_content() -> None:
     assert text_chunks == ["Hello there!"]
 
 
+@pytest.mark.parametrize(
+    "item_type",
+    ["assistant_message", "message", "output_message", "output_text", "text"],
+)
+def test_stream_alternative_answer_item_types_yield_content(
+    item_type: str,
+) -> None:
+    """Codex CLI versions used with gpt-5.5* may emit the final answer
+    under different item.type names. All recognized variants should
+    surface the text as delta.content."""
+    cli = _make_cli()
+    chunks = _run_stream(
+        cli,
+        [
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "item_1",
+                    "type": item_type,
+                    "text": "Final answer!",
+                },
+            },
+        ],
+    )
+
+    text_chunks = [
+        c.choice.delta.content for c in chunks if c.choice.delta.content
+    ]
+    assert text_chunks == ["Final answer!"]
+
+
+def test_stream_agent_message_with_content_field_yields_content() -> None:
+    """Some Codex versions put the text in ``content`` instead of ``text``."""
+    cli = _make_cli()
+    chunks = _run_stream(
+        cli,
+        [
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "item_1",
+                    "type": "agent_message",
+                    "content": "Hello from content field",
+                },
+            },
+        ],
+    )
+
+    text_chunks = [
+        c.choice.delta.content for c in chunks if c.choice.delta.content
+    ]
+    assert text_chunks == ["Hello from content field"]
+
+
+def test_stream_agent_message_with_content_parts_yields_content() -> None:
+    """``content`` may be a list of structured parts (e.g. responses API)."""
+    cli = _make_cli()
+    chunks = _run_stream(
+        cli,
+        [
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "item_1",
+                    "type": "assistant_message",
+                    "content": [
+                        {"type": "output_text", "text": "Hello "},
+                        {"type": "output_text", "text": "world!"},
+                    ],
+                },
+            },
+        ],
+    )
+
+    text = "".join(
+        c.choice.delta.content or "" for c in chunks if c.choice.delta.content
+    )
+    assert text == "Hello world!"
+
+
+def test_stream_no_answer_emitted_surfaces_fallback_content() -> None:
+    """Regression test for gpt-5.5: if the Codex CLI completes a turn
+    without emitting any answer-shaped item, the stream must still
+    yield a fallback content chunk so the upstream LLM loop does not
+    raise EmptyLLMResponseError."""
+    cli = _make_cli()
+    chunks = _run_stream(
+        cli,
+        [
+            {"type": "thread.started", "thread_id": "t"},
+            {"type": "turn.started"},
+            {
+                "type": "turn.completed",
+                "usage": {"input_tokens": 5, "output_tokens": 0},
+            },
+        ],
+    )
+
+    content = "".join(
+        c.choice.delta.content or "" for c in chunks if c.choice.delta.content
+    )
+    assert content, "Expected fallback content when no agent_message arrives"
+    assert "no answer" in content.lower()
+    # Final chunk is still the stop marker.
+    assert chunks[-1].choice.finish_reason == "stop"
+
+
 def test_stream_deprecated_openai_base_url_error_is_silent() -> None:
     cli = _make_cli()
     chunks = _run_stream(
@@ -276,10 +388,15 @@ def test_stream_deprecated_openai_base_url_error_is_silent() -> None:
     )
 
     reasoning = [c for c in chunks if c.choice.delta.reasoning_content]
-    text = [c for c in chunks if c.choice.delta.content]
-    # Neither reasoning nor text -- error was silently skipped.
+    # The deprecation error itself is silently skipped (no reasoning),
+    # but the stream still surfaces a generic fallback content chunk
+    # so the LLM loop does not error out with EmptyLLMResponseError.
     assert reasoning == []
-    assert text == []
+    content = "".join(
+        c.choice.delta.content or "" for c in chunks if c.choice.delta.content
+    )
+    assert "OPENAI_BASE_URL" not in content
+    assert "no answer" in content.lower()
 
 
 def test_stream_other_error_yields_warning_reasoning() -> None:
@@ -305,6 +422,13 @@ def test_stream_other_error_yields_warning_reasoning() -> None:
     ]
     assert any("⚠️" in r for r in reasoning)
     assert any("Something bad happened" in r for r in reasoning)
+
+    # When no answer is produced, the accumulated error message is
+    # also surfaced as content so the LLM loop sees a usable answer.
+    content = "".join(
+        c.choice.delta.content or "" for c in chunks if c.choice.delta.content
+    )
+    assert "Something bad happened" in content
 
 
 def test_stream_turn_completed_populates_usage() -> None:
