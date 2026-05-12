@@ -116,6 +116,30 @@ _CODEX_ANSWER_TEXT_FIELDS: tuple[str, ...] = (
 )
 
 
+# Substrings (lowercased) in codex stderr/stdout that mean the ChatGPT
+# session auth is exhausted or invalid -- the user must re-authenticate
+# with the codex CLI. When any of these appear we lead with a clear
+# re-auth headline instead of the generic "no answer" message.
+_CODEX_AUTH_FAILURE_MARKERS: tuple[str, ...] = (
+    "refresh token was already used",
+    "please log out and sign in again",
+    "failed to refresh token",
+    "401 unauthorized",
+    "codex_login::auth::manager",
+    "invalid_grant",
+    "token has expired",
+    "not authenticated",
+)
+
+
+def _detect_codex_auth_failure(*texts: str) -> bool:
+    """Return True if any text fragment matches a known codex auth-failure signature."""
+    haystack = " ".join(t for t in texts if t).lower()
+    if not haystack:
+        return False
+    return any(marker in haystack for marker in _CODEX_AUTH_FAILURE_MARKERS)
+
+
 def _build_codex_no_answer_message(
     *,
     model_name: str,
@@ -133,7 +157,19 @@ def _build_codex_no_answer_message(
     (CLI exit code, observed event shapes, stderr tail, non-JSON stdout)
     that's actionable for a maintainer without overwhelming the chat.
     """
-    if error_messages:
+    auth_failure = _detect_codex_auth_failure(
+        stderr_text, *non_json_lines, *error_messages
+    )
+
+    if auth_failure:
+        headline = (
+            "**Codex authentication expired.** Your ChatGPT session "
+            "token is no longer valid (the refresh token has already "
+            "been used or has expired). "
+            "**Please sign out of the OpenAI Codex provider in Onyx "
+            "settings and sign in again** to issue a fresh token."
+        )
+    elif error_messages:
         headline = (
             "The Codex CLI did not produce a final answer for model "
             f"`{model_name}`. Reported errors:\n\n"
@@ -732,6 +768,17 @@ class CodexCLI(LLM):
                     pass
                 stderr_thread.join(timeout=2)
                 stderr_text = "".join(stderr_lines)
+                if _detect_codex_auth_failure(
+                    stderr_text, *non_json_lines, *error_messages
+                ):
+                    logger.warning(
+                        "Codex CLI authentication failed for model %s "
+                        "(refresh token expired/reused); user must "
+                        "re-authenticate via the OpenAI Codex provider "
+                        "settings. exit_code=%s",
+                        self._model_name,
+                        proc.returncode,
+                    )
                 fallback_text = _build_codex_no_answer_message(
                     model_name=self._model_name,
                     error_messages=error_messages,

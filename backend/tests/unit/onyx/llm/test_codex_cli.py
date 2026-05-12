@@ -414,6 +414,59 @@ def test_stream_no_answer_fallback_surfaces_non_json_stdout() -> None:
     assert "is not available" in content
 
 
+def test_stream_no_answer_fallback_detects_auth_expiry() -> None:
+    """When codex stderr reveals an expired/reused refresh token, the
+    fallback content must lead with a clear re-auth instruction so the
+    user knows what to do (rather than just seeing a generic
+    "no answer for model X" diagnostic)."""
+    cli = _make_cli()
+    proc = _make_proc("")
+    proc.stderr = StringIO(
+        "2026-05-12T09:30:43.954769Z ERROR codex_login::auth::manager: "
+        "Failed to refresh token: Your access token could not be "
+        "refreshed because your refresh token was already used. "
+        "Please log out and sign in again.\n"
+        "2026-05-12T09:30:44.163373Z ERROR codex_api::endpoint::"
+        "responses_websocket: failed to connect to websocket: HTTP "
+        "error: 401 Unauthorized, url: wss://chatgpt.com/backend-api/"
+        "codex/responses\n"
+    )
+    proc.returncode = 1
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc):
+        with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
+            chunks = list(cli.stream([UserMessage(content="hi")]))
+
+    content = "".join(
+        c.choice.delta.content or "" for c in chunks if c.choice.delta.content
+    )
+    # Headline must clearly state re-auth is required, not just
+    # "no answer for model".
+    assert "Codex authentication expired" in content
+    assert "sign in again" in content
+    # Diagnostics should still be attached.
+    assert "Stderr tail" in content
+    assert "401 Unauthorized" in content
+
+
+def test_detect_codex_auth_failure_recognizes_known_markers() -> None:
+    """Smoke-test the auth-failure detector against representative
+    stderr fragments from the codex CLI."""
+    from onyx.llm.codex_cli import _detect_codex_auth_failure
+
+    assert _detect_codex_auth_failure(
+        "Failed to refresh token: refresh token was already used"
+    )
+    assert _detect_codex_auth_failure(
+        "HTTP error: 401 Unauthorized, url: wss://chatgpt.com/..."
+    )
+    assert _detect_codex_auth_failure(
+        "ERROR codex_login::auth::manager: ..."
+    )
+    assert _detect_codex_auth_failure("invalid_grant")
+    assert not _detect_codex_auth_failure("model is overloaded")
+    assert not _detect_codex_auth_failure("")
+
+
 def test_stream_no_answer_fallback_surfaces_stderr() -> None:
     """Stderr from codex (e.g. auth/login failures) must surface in the
     diagnostic block of the fallback content."""
