@@ -90,6 +90,61 @@ _CODEX_ITEM_ICON_MAP: dict[str, str] = {
     "apply_patch": "✏️",
 }
 
+# Codex item.type values that carry the assistant's final answer text.
+# Older codex CLIs use ``agent_message`` with a ``text`` field. Newer
+# versions (notably those supporting gpt-5.5*) may emit the same payload
+# under different type names or with the text in alternate fields. Treat
+# all of these as the final answer.
+_CODEX_ANSWER_ITEM_TYPES: frozenset[str] = frozenset(
+    {
+        "agent_message",
+        "assistant_message",
+        "message",
+        "output_message",
+        "output_text",
+        "text",
+    }
+)
+
+# Candidate field names that may carry the assistant text inside an
+# answer-like item. Tried in order until a non-empty string is found.
+_CODEX_ANSWER_TEXT_FIELDS: tuple[str, ...] = (
+    "text",
+    "output_text",
+    "content",
+    "message",
+)
+
+
+def _extract_codex_answer_text(item: dict[str, Any]) -> str:
+    """Pull the assistant text out of an answer-like Codex item.
+
+    Codex versions differ in whether they put the text under ``text``,
+    ``content``, ``output_text``, or a list of content parts. Walk the
+    known shapes and return the first non-empty string found.
+    """
+    for field in _CODEX_ANSWER_TEXT_FIELDS:
+        value = item.get(field)
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, list):
+            parts: list[str] = []
+            for part in value:
+                if isinstance(part, str):
+                    parts.append(part)
+                elif isinstance(part, dict):
+                    # Common shapes: {"type":"output_text","text":"..."}
+                    # or {"type":"text","text":"..."}.
+                    for nested in ("text", "output_text", "content"):
+                        nested_value = part.get(nested)
+                        if isinstance(nested_value, str) and nested_value:
+                            parts.append(nested_value)
+                            break
+            joined = "".join(parts)
+            if joined:
+                return joined
+    return ""
+
 # Max chars of aggregated_output to include in a reasoning chunk. Longer
 # output is truncated with a marker -- full output is still available in
 # the CLI's own stderr/stdout if needed.
@@ -515,6 +570,8 @@ class CodexCLI(LLM):
 
         final_usage: Usage | None = None
         event_count = 0
+        answer_emitted = False
+        error_messages: list[str] = []
 
         try:
             assert proc.stdout is not None
@@ -538,13 +595,65 @@ class CodexCLI(LLM):
                         final_usage = _build_codex_usage(usage_data)
                     continue
 
-                yield from self._dispatch_codex_event(
+                for chunk in self._dispatch_codex_event(
                     event, response_id, created
-                )
+                ):
+                    if chunk.choice.delta.content:
+                        answer_emitted = True
+                    yield chunk
+
+                # Track error item messages so we can surface them as
+                # content if the stream never produced an answer.
+                item = event.get("item") or {}
+                if (
+                    event.get("type") == "item.completed"
+                    and item.get("type") == "error"
+                ):
+                    msg = item.get("message", "")
+                    if msg and "OPENAI_BASE_URL" not in msg and not (
+                        "deprecated" in msg.lower() and "features" in msg.lower()
+                    ):
+                        error_messages.append(msg)
 
             if timed_out.is_set():
                 raise TimeoutError(
                     f"Codex CLI streaming timed out after {timeout}s"
+                )
+
+            # If no agent_message-like item ever produced content, surface
+            # something usable so the upstream LLM loop doesn't fail with
+            # EmptyLLMResponseError. Prefer accumulated error messages;
+            # fall back to a generic explanation that names the model.
+            if not answer_emitted:
+                if error_messages:
+                    fallback_text = (
+                        "The Codex CLI did not produce a final answer. "
+                        "Reported errors:\n\n"
+                        + "\n".join(f"- {m}" for m in error_messages)
+                    )
+                else:
+                    fallback_text = (
+                        f"The Codex CLI returned no answer for model "
+                        f"'{self._model_name}'. The model may not be "
+                        "available on this account, or the CLI version "
+                        "may emit an unsupported event format. Check the "
+                        "Codex CLI logs and try a different model "
+                        "(e.g. gpt-5.5-codex)."
+                    )
+                logger.warning(
+                    "Codex CLI stream produced no answer for model %s; "
+                    "surfacing fallback content (errors=%d, events=%d).",
+                    self._model_name,
+                    len(error_messages),
+                    event_count,
+                )
+                yield ModelResponseStream(
+                    id=response_id,
+                    created=created,
+                    choice=StreamingChoice(
+                        index=0,
+                        delta=Delta(content=fallback_text),
+                    ),
                 )
 
             yield ModelResponseStream(
@@ -624,8 +733,8 @@ class CodexCLI(LLM):
             return
 
         if event_type == "item.completed":
-            if item_type == "agent_message":
-                text = item.get("text", "")
+            if item_type in _CODEX_ANSWER_ITEM_TYPES:
+                text = _extract_codex_answer_text(item)
                 if text:
                     yield ModelResponseStream(
                         id=response_id,
@@ -634,6 +743,13 @@ class CodexCLI(LLM):
                             index=0,
                             delta=Delta(content=text),
                         ),
+                    )
+                else:
+                    logger.warning(
+                        "Codex CLI emitted answer item '%s' with no "
+                        "extractable text; keys=%s",
+                        item_type,
+                        sorted(item.keys()),
                     )
                 return
 
