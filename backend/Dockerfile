@@ -185,7 +185,8 @@ COPY --chown=onyx:onyx ./scripts/rotate_llm_provider_keys.py /app/scripts/rotate
 COPY --chown=onyx:onyx ./scripts/seed_dev_license.py /app/scripts/seed_dev_license.py
 COPY --chown=onyx:onyx ./scripts/force_auto_llm_sync.py /app/scripts/force_auto_llm_sync.py
 COPY --chown=onyx:onyx ./scripts/update_cli_providers.sh /app/scripts/update_cli_providers.sh
-RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/update_cli_providers.sh /app/scripts/setup_craft_templates.sh
+COPY --chown=onyx:onyx ./scripts/docker_entrypoint.sh /app/scripts/docker_entrypoint.sh
+RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/update_cli_providers.sh /app/scripts/docker_entrypoint.sh /app/scripts/setup_craft_templates.sh
 
 # Run Craft template setup at build time when ENABLE_CRAFT=true
 # This pre-bakes demo data, Python venv, and npm dependencies into the image
@@ -217,4 +218,10 @@ ENV LD_PRELOAD=libjemalloc.so.2
 
 # Default command which does nothing
 # This container is used by api server and background which specify their own CMD
+# Refresh the CLI providers, then exec whatever command the deployment supplies.
+# It must be an ENTRYPOINT rather than a hook inside supervisord_entrypoint.sh:
+# some compose files start api_server with uvicorn directly and never reach that
+# script. No-op unless ENABLE_CLI_PROVIDERS=true.
+ENTRYPOINT ["/app/scripts/docker_entrypoint.sh"]
+
 CMD ["tail", "-f", "/dev/null"]
