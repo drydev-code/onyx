@@ -1,40 +1,33 @@
 # Dockerfile.dev - Fast rebuild for code-only changes
 #
 # Two-stage approach:
-#   Stage 1 (deps): Cached npm ci layer - only rebuilds when package.json changes
-#   Stage 2 (build): Next.js build with Turbopack persistent cache
-#   Stage 3 (runner): Minimal production image
+#   Stage 1 (builder): bun install + Next.js build with a persistent build cache
+#   Stage 2 (runner): Minimal production image
 #
 # Usage:
 #   docker build -t onyxdotapp/onyx-web-server:craft-latest -f Dockerfile.dev .
 #
 # Why this is faster than the main Dockerfile:
-#   - Deps layer is cached aggressively (only invalidated by package*.json)
-#   - Next.js build uses Turbopack which has fast incremental rebuilds
-#   - BuildKit can cache the .next/cache directory across builds
+#   - BuildKit caches bun's package cache and .next/cache across builds
 #   - Final image only contains standalone output (~150MB vs full node_modules)
+#
+# Install and build must live in the SAME stage: the opal and shared workspaces
+# build their dist/ artifacts from `prepare` hooks during `bun install`, and
+# those artifacts are not in the build context, so a later `COPY . .` into a
+# separate stage would leave them behind.
 
-FROM node:20-alpine AS deps
+FROM oven/bun:1-alpine AS bun_source
+
+FROM node:24-alpine AS builder
 RUN apk add --no-cache libc6-compat
+COPY --from=bun_source /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /app
 
-# Deps layer - only rebuilds when package files change
-COPY package.json package-lock.json ./
-COPY lib/opal/package.json ./lib/opal/
-RUN npm ci
-
-# ---
-
-FROM node:20-alpine AS builder
-RUN apk add --no-cache libc6-compat
-WORKDIR /app
-
-# Copy deps from cache (opal is an npm workspace, modules are hoisted)
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package-lock.json ./package-lock.json
-
-# Copy source - this layer invalidates on any code change
-COPY . .
+# Install deps. opal's tsconfig extends web's, so tsconfig.json must be present
+# at install time for its DTS build to succeed.
+COPY package.json bun.lock tsconfig.json ./
+COPY lib/opal/ ./lib/opal/
+COPY lib/shared/ ./lib/shared/
 
 # Workaround for Windows case-folding: git tracks both "Button/" (capital, only
 # Button.stories.tsx for Storybook) and "button/" (lowercase, real component
@@ -42,6 +35,20 @@ COPY . .
 # "button/components.tsx" never lands in the build context. Re-create the
 # lowercase directory inside the container so the @opal path-alias imports
 # resolve on Linux.
+#
+# Applied twice: once here so opal's `prepare` build during `bun install` sees
+# it, and again after `COPY . .` re-overwrites lib/opal from the build context.
+RUN if [ -d lib/opal/src/components/buttons/Button ] && [ ! -f lib/opal/src/components/buttons/button/components.tsx ]; then \
+        mkdir -p lib/opal/src/components/buttons/button && \
+        cp -a lib/opal/src/components/buttons/Button/. lib/opal/src/components/buttons/button/; \
+    fi
+
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
+
+# Copy source - this layer invalidates on any code change
+COPY . .
+
 RUN if [ -d lib/opal/src/components/buttons/Button ] && [ ! -f lib/opal/src/components/buttons/button/components.tsx ]; then \
         mkdir -p lib/opal/src/components/buttons/button && \
         cp -a lib/opal/src/components/buttons/Button/. lib/opal/src/components/buttons/button/; \
@@ -57,11 +64,11 @@ ENV NEXT_PUBLIC_THEME=${NEXT_PUBLIC_THEME}
 # Use BuildKit cache mount for .next/cache to speed up incremental builds
 # This persists the Turbopack/webpack cache across Docker builds
 RUN --mount=type=cache,target=/app/.next/cache \
-    npx next build
+    ./node_modules/.bin/next build
 
 # ---
 
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 
 RUN rm -rf /usr/local/lib/node_modules

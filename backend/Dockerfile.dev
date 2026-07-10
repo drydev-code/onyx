@@ -20,6 +20,12 @@ FROM ${BASE_IMAGE}
 # Bust cache on every build to ensure latest code is copied
 ARG CACHEBUST=0
 
+# Re-declare so the entrypoint's CLI refresh runs even when the base image
+# predates this ENV (deploy-dev.sh passes both build args through).
+ARG ENABLE_CRAFT=false
+ARG ENABLE_CLI_PROVIDERS=false
+ENV ENABLE_CLI_PROVIDERS=${ENABLE_CLI_PROVIDERS}
+
 # Only copy application code - deps are already in the base image
 COPY --chown=onyx:onyx ./onyx /app/onyx
 COPY --chown=onyx:onyx ./ee /app/ee
@@ -28,4 +34,4 @@ COPY --chown=onyx:onyx ./alembic /app/alembic
 COPY --chown=onyx:onyx ./alembic_tenants /app/alembic_tenants
 COPY --chown=onyx:onyx ./alembic.ini /app/alembic.ini
 COPY --chown=onyx:onyx ./scripts /app/scripts
-RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/setup_craft_templates.sh 2>/dev/null || true
+RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/update_cli_providers.sh

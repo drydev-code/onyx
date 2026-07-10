@@ -87,6 +87,25 @@ STAGES_FAILED=()
 
 timestamp() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 
+# JSON encoders. jq is not present on every dev box (notably Git Bash on
+# Windows), and without a fallback write_report emitted a malformed report --
+# exactly when an agent needs to read it.
+json_array() {
+    if command -v jq >/dev/null 2>&1; then
+        jq -R -s 'split("\n") | map(select(length > 0))'
+    else
+        python -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().split("\n") if l]))'
+    fi
+}
+
+json_string() {
+    if command -v jq >/dev/null 2>&1; then
+        jq -R -s .
+    else
+        python -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+    fi
+}
+
 write_report() {
     local failed_stage="${1:-}"
     local log_file="${2:-}"
@@ -98,7 +117,7 @@ write_report() {
         # Grep for common error patterns: file paths with line numbers
         failing_files=$(grep -oP '(?:^|\s)\./?\S+\.[jt]sx?(?::\d+)?' "$log_file" 2>/dev/null \
             | sort -u | head -20 \
-            | jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null || echo "[]")
+            | json_array 2>/dev/null || echo "[]")
     fi
 
     cat > "$REPORT_FILE" <<ENDJSON
@@ -106,11 +125,11 @@ write_report() {
   "timestamp": "$(timestamp)",
   "branch": "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")",
   "commit": "$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")",
-  "stages_run": $(printf '%s\n' "${STAGES_RUN[@]}" | jq -R -s 'split("\n") | map(select(length > 0))'),
-  "stages_passed": $(printf '%s\n' "${STAGES_PASSED[@]}" | jq -R -s 'split("\n") | map(select(length > 0))'),
-  "stages_failed": $(printf '%s\n' "${STAGES_FAILED[@]}" | jq -R -s 'split("\n") | map(select(length > 0))'),
+  "stages_run": $(printf '%s\n' "${STAGES_RUN[@]}" | json_array),
+  "stages_passed": $(printf '%s\n' "${STAGES_PASSED[@]}" | json_array),
+  "stages_failed": $(printf '%s\n' "${STAGES_FAILED[@]}" | json_array),
   "failed_stage": "$failed_stage",
-  "error_summary": $(echo "$error_summary" | jq -R -s .),
+  "error_summary": $(echo "$error_summary" | json_string),
   "failing_files": $failing_files,
   "log_file": "$log_file",
   "fix_hint": "Read the log file for full error output. Fix the failing files, commit, then re-run: ./integration-pipeline.sh --skip-merge --stage $failed_stage"
@@ -131,8 +150,8 @@ write_success_report() {
   "timestamp": "$(timestamp)",
   "branch": "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")",
   "commit": "$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")",
-  "stages_run": $(printf '%s\n' "${STAGES_RUN[@]}" | jq -R -s 'split("\n") | map(select(length > 0))'),
-  "stages_passed": $(printf '%s\n' "${STAGES_PASSED[@]}" | jq -R -s 'split("\n") | map(select(length > 0))'),
+  "stages_run": $(printf '%s\n' "${STAGES_RUN[@]}" | json_array),
+  "stages_passed": $(printf '%s\n' "${STAGES_PASSED[@]}" | json_array),
   "stages_failed": [],
   "failed_stage": null,
   "result": "ALL_PASSED"
@@ -181,46 +200,60 @@ stage_merge() {
 }
 
 stage_lint() {
-    echo "    Running ESLint..."
-    (cd "$SCRIPT_DIR/web" && npx next lint --quiet) || return $?
+    # Upstream moved to bun + oxlint + tsgo; `next lint` no longer exists in Next 16.
+    echo "    Running oxlint..."
+    (cd "$SCRIPT_DIR/web" && bun run lint) || return $?
     echo "    Running TypeScript type check..."
-    (cd "$SCRIPT_DIR/web" && npm run types:check) || return $?
+    (cd "$SCRIPT_DIR/web" && bun run types:check) || return $?
 }
 
 stage_build() {
     echo "    Running Next.js production build..."
-    (cd "$SCRIPT_DIR/web" && npx next build)
+    (cd "$SCRIPT_DIR/web" && bun run build)
 }
 
 stage_backend() {
+    # compileall in a single process: the old loop forked one `python -m
+    # py_compile` per file, which took minutes and exhausted Git Bash's fork
+    # table on Windows ("dofork: child died unexpectedly").
     echo "    Checking Python syntax..."
-    local errors=0
-    # Find all .py files in backend/onyx and compile-check them
-    while IFS= read -r -d '' pyfile; do
-        if ! python -m py_compile "$pyfile" 2>&1; then
-            errors=$((errors + 1))
-        fi
-    done < <(find "$SCRIPT_DIR/backend/onyx" -name '*.py' -print0)
-
-    if [[ $errors -gt 0 ]]; then
-        echo "    $errors Python files have syntax errors"
+    if ! python -m compileall -q "$SCRIPT_DIR/backend/onyx"; then
+        echo "    Python files have syntax errors (see above)"
         return 1
     fi
     echo "    All Python files OK"
 
-    # Check for broken imports in new provider files
+    # Check for broken imports in new provider files, and assert that every
+    # provider this fork adds actually survived the merge.
     echo "    Checking provider module imports..."
     (cd "$SCRIPT_DIR/backend" && python -c "
 from onyx.llm.constants import LlmProviderNames, WELL_KNOWN_PROVIDER_NAMES
 from onyx.llm.well_known_providers.constants import *
-from onyx.llm.well_known_providers.llm_provider_options import get_llm_options
+from onyx.llm.well_known_providers.llm_provider_options import (
+    fetch_available_well_known_llms,
+)
+
+FORK_PROVIDERS = {
+    LlmProviderNames.ZAI,
+    LlmProviderNames.GOOGLE_AI_STUDIO,
+    LlmProviderNames.OPENAI_CODEX,
+    LlmProviderNames.CLAUDE_CODE_CLI,
+}
+registered = {d.name for d in fetch_available_well_known_llms()}
+missing = sorted(p.value for p in FORK_PROVIDERS if p.value not in registered)
+if missing:
+    raise SystemExit(f'  ERROR: fork providers missing from registry: {missing}')
 print(f'  Provider constants OK ({len(WELL_KNOWN_PROVIDER_NAMES)} providers)')
+print(f'  Fork providers OK ({len(FORK_PROVIDERS)} present)')
 " 2>&1) || return $?
 }
 
 stage_test() {
+    # Jest's 5s default is too tight for the heavier modal suites on slower dev
+    # boxes (CustomModal's userEvent-driven tests take >10s on Windows), so they
+    # time out here while passing on upstream's Linux CI runners.
     echo "    Running Jest tests..."
-    (cd "$SCRIPT_DIR/web" && npx jest --ci --passWithNoTests --forceExit 2>&1) || return $?
+    (cd "$SCRIPT_DIR/web" && npx jest --ci --passWithNoTests --forceExit --testTimeout=30000 2>&1) || return $?
 }
 
 stage_deploy() {
