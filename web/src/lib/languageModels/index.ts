@@ -40,6 +40,7 @@ import NebiusTokenfactoryModal from "@/sections/modals/languageModels/NebiusToke
 import ZAIModal from "@/sections/modals/languageModels/ZAIModal";
 import CodexModal from "@/sections/modals/languageModels/CodexModal";
 import ClaudeCodeCLIModal from "@/sections/modals/languageModels/ClaudeCodeCLIModal";
+import GoogleAIStudioModal from "@/sections/modals/languageModels/GoogleAIStudioModal";
 
 // ─── Text (LLM) providers ────────────────────────────────────────────────────
 
@@ -139,7 +140,7 @@ const PROVIDERS: Record<string, ProviderEntry> = {
     icon: SvgGemini,
     productName: "Gemini",
     companyName: "Google AI Studio",
-    Modal: CustomModal,
+    Modal: GoogleAIStudioModal,
   },
   [LLMProviderName.OPENAI_CODEX]: {
     icon: SvgOpenai,

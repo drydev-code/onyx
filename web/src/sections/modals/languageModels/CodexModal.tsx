@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useSWRConfig } from "swr";
 import { useFormikContext } from "formik";
-import { LLMProviderFormProps, LLMProviderName } from "@/interfaces/llm";
+import { LLMProviderFormProps, LLMProviderName } from "@/lib/languageModels/types";
 import {
   useInitialValues,
   buildValidationSchema,

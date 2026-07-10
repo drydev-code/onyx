@@ -15,12 +15,14 @@ import CustomModal from "@/sections/modals/languageModels/CustomModal";
 import ZAIModal from "@/sections/modals/languageModels/ZAIModal";
 import CodexModal from "@/sections/modals/languageModels/CodexModal";
 import ClaudeCodeCLIModal from "@/sections/modals/languageModels/ClaudeCodeCLIModal";
+import GoogleAIStudioModal from "@/sections/modals/languageModels/GoogleAIStudioModal";
 
 describe("getProvider", () => {
   it.each([
     [LLMProviderName.ZAI, ZAIModal],
     [LLMProviderName.OPENAI_CODEX, CodexModal],
     [LLMProviderName.CLAUDE_CODE_CLI, ClaudeCodeCLIModal],
+    [LLMProviderName.GOOGLE_AI_STUDIO, GoogleAIStudioModal],
   ])("routes %s to its own modal", (providerName, expectedModal) => {
     expect(getProvider(providerName).Modal).toBe(expectedModal);
   });
