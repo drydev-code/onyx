@@ -213,17 +213,12 @@ stage_build() {
 }
 
 stage_backend() {
+    # compileall in a single process: the old loop forked one `python -m
+    # py_compile` per file, which took minutes and exhausted Git Bash's fork
+    # table on Windows ("dofork: child died unexpectedly").
     echo "    Checking Python syntax..."
-    local errors=0
-    # Find all .py files in backend/onyx and compile-check them
-    while IFS= read -r -d '' pyfile; do
-        if ! python -m py_compile "$pyfile" 2>&1; then
-            errors=$((errors + 1))
-        fi
-    done < <(find "$SCRIPT_DIR/backend/onyx" -name '*.py' -print0)
-
-    if [[ $errors -gt 0 ]]; then
-        echo "    $errors Python files have syntax errors"
+    if ! python -m compileall -q "$SCRIPT_DIR/backend/onyx"; then
+        echo "    Python files have syntax errors (see above)"
         return 1
     fi
     echo "    All Python files OK"

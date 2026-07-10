@@ -72,10 +72,19 @@ ARG ENABLE_CRAFT=false
 # Use --build-arg ENABLE_CLI_PROVIDERS=true to include the Claude Code and Codex CLIs
 ARG ENABLE_CLI_PROVIDERS=false
 
+# CLI provider versions. Default to `latest` so a base-image rebuild always picks
+# up the newest CLIs; pin to an exact version to freeze a build.
+ARG CLAUDE_CODE_CLI_VERSION=latest
+ARG CODEX_CLI_VERSION=latest
+
 # DO_NOT_TRACK is used to disable telemetry for Unstructured
 ENV ONYX_RUNNING_IN_DOCKER="true" \
     DO_NOT_TRACK="true" \
     PLAYWRIGHT_BROWSERS_PATH="/app/.cache/ms-playwright"
+
+# Surface the build flag at runtime so the entrypoint knows whether to refresh
+# the CLIs on container start (see scripts/update_cli_providers.sh).
+ENV ENABLE_CLI_PROVIDERS=${ENABLE_CLI_PROVIDERS}
 
 # Create non-root user for security best practices
 RUN groupadd -g 1001 onyx && \
@@ -138,14 +147,17 @@ RUN if [ "$ENABLE_CLI_PROVIDERS" = "true" ] && [ "$ENABLE_CRAFT" != "true" ]; th
     fi
 
 # Conditionally install Claude Code CLI and Codex CLI
-# Only installed when ENABLE_CLI_PROVIDERS=true
+# Only installed when ENABLE_CLI_PROVIDERS=true.
+# These are refreshed again on container start by scripts/update_cli_providers.sh,
+# so the running image tracks upstream CLI releases without a rebuild.
 RUN if [ "$ENABLE_CLI_PROVIDERS" = "true" ]; then \
-        echo "Installing Claude Code CLI..." && \
-        npm install -g @anthropic-ai/claude-code && \
-        echo "Installing OpenAI Codex CLI..." && \
-        npm install -g @openai/codex && \
-        mkdir -p /home/onyx/.claude && \
-        chown onyx:onyx /home/onyx/.claude; \
+        echo "Installing Claude Code CLI (${CLAUDE_CODE_CLI_VERSION})..." && \
+        npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_CLI_VERSION}" && \
+        echo "Installing OpenAI Codex CLI (${CODEX_CLI_VERSION})..." && \
+        npm install -g --no-fund --no-audit "@openai/codex@${CODEX_CLI_VERSION}" && \
+        claude --version && codex --version && \
+        mkdir -p /home/onyx/.claude /home/onyx/.codex && \
+        chown -R onyx:onyx /home/onyx/.claude /home/onyx/.codex; \
     fi
 
 # Copy the compiled Python packages and only the console scripts our services launch (api server,
@@ -221,7 +233,8 @@ COPY --chown=onyx:onyx ./scripts/reencrypt_secrets.py /app/scripts/reencrypt_sec
 COPY --chown=onyx:onyx ./scripts/rotate_llm_provider_keys.py /app/scripts/rotate_llm_provider_keys.py
 COPY --chown=onyx:onyx ./scripts/seed_dev_license.py /app/scripts/seed_dev_license.py
 COPY --chown=onyx:onyx ./scripts/force_auto_llm_sync.py /app/scripts/force_auto_llm_sync.py
-RUN chmod +x /app/scripts/supervisord_entrypoint.sh
+COPY --chown=onyx:onyx ./scripts/update_cli_providers.sh /app/scripts/update_cli_providers.sh
+RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/update_cli_providers.sh
 
 # Put logo in assets
 COPY --chown=onyx:onyx ./assets /app/assets

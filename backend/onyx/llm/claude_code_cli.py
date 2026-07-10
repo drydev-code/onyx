@@ -6,7 +6,6 @@ This is NOT a LiteLLM-based provider; it uses subprocess directly.
 
 import json
 import os
-import pwd
 import stat
 import subprocess
 import tempfile
@@ -15,6 +14,14 @@ import time
 import uuid
 from collections.abc import Iterator
 from typing import Any
+
+try:
+    import pwd
+except ImportError:
+    # Non-POSIX (e.g. Windows dev boxes). Privilege dropping is a POSIX-only
+    # concern and _drop_privileges_target() bails out before touching pwd, but
+    # a module-level import would otherwise break importing this provider at all.
+    pwd = None  # type: ignore[assignment]
 
 from onyx.configs.model_configs import GEN_AI_TEMPERATURE
 from onyx.llm.cli_tool_bridge import CATEGORY_FETCH
