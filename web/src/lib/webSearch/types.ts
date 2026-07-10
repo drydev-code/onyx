@@ -8,7 +8,8 @@ export type WebSearchProviderType =
   | "exa"
   | "searxng"
   | "brave"
-  | "tavily";
+  | "tavily"
+  | "glm";
 
 export type WebContentProviderType =
   | "firecrawl"

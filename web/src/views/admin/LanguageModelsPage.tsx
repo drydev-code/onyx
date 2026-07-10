@@ -59,6 +59,7 @@ const PROVIDER_DISPLAY_ORDER: string[] = [
   LLMProviderName.BIFROST,
   LLMProviderName.OPENAI_COMPATIBLE,
   LLMProviderName.NEBIUS_TOKENFACTORY,
+  LLMProviderName.ZAI,
   LLMProviderName.GOOGLE_AI_STUDIO,
   LLMProviderName.OPENAI_CODEX,
   LLMProviderName.CLAUDE_CODE_CLI,

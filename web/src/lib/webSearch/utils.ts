@@ -68,6 +68,12 @@ export const SEARCH_PROVIDER_DETAILS: Record<
     apiKeyUrl: "https://app.tavily.com/home",
     logo: SvgTavily,
   },
+  glm: {
+    label: "GLM",
+    subtitle: "Z.AI Web Search",
+    helper: "Connect to GLM Web Search (Z.AI) to set up web search.",
+    apiKeyUrl: "https://z.ai/subscribe",
+  },
 };
 
 export const SEARCH_PROVIDER_ORDER = Object.keys(
@@ -123,6 +129,10 @@ const SEARCH_PROVIDER_CAPABILITIES: Record<
     storedConfigAliases: { searxng_base_url: ["searxng_base_url"] },
   },
   tavily: {
+    requiresApiKey: true,
+    requiredConfigKeys: [],
+  },
+  glm: {
     requiresApiKey: true,
     requiredConfigKeys: [],
   },
@@ -199,6 +209,13 @@ export function buildSearchProviderConfig(
   const caps = getSearchCapabilities(providerType);
   const value = searchEngineIdOrBaseUrl.trim();
   const config: Record<string, string> = {};
+
+  // GLM reuses the single config field to carry its transport mode (rest/mcp).
+  if (providerType === "glm" && value) {
+    config["transport"] = value;
+    return config;
+  }
+
   if (!value || caps.requiredConfigKeys.length === 0) return config;
   const requiredKey = caps.requiredConfigKeys[0];
   if (!requiredKey) return config;
@@ -210,6 +227,9 @@ export function getSingleConfigFieldValueForForm(
   providerType: string,
   provider: SearchProviderLike
 ): string {
+  // GLM stores its transport mode in config rather than a required key.
+  if (providerType === "glm") return provider?.config?.transport || "rest";
+
   const caps = getSearchCapabilities(providerType);
   if (caps.requiredConfigKeys.length === 0) return "";
   const requiredKey = caps.requiredConfigKeys[0];
@@ -396,6 +416,16 @@ export function getSearchConfigField(
       placeholder: "https://your-searxng-instance.com",
       subDescription: markdown(
         "Paste the base URL of your [SearXNG instance](https://docs.searxng.org/admin/installation.html)."
+      ),
+    };
+  }
+  if (providerType === "glm") {
+    return {
+      title: "Transport",
+      placeholder: "rest",
+      defaultValue: "rest",
+      subDescription: markdown(
+        "How to reach Z.AI web search: `rest` for the HTTP API, `mcp` for the MCP server."
       ),
     };
   }

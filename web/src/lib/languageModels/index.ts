@@ -37,6 +37,7 @@ import LiteLLMProxyModal from "@/sections/modals/languageModels/LiteLLMProxyModa
 import BifrostModal from "@/sections/modals/languageModels/BifrostModal";
 import OpenAICompatibleModal from "@/sections/modals/languageModels/OpenAICompatibleModal";
 import NebiusTokenfactoryModal from "@/sections/modals/languageModels/NebiusTokenfactoryModal";
+import ZAIModal from "@/sections/modals/languageModels/ZAIModal";
 
 // ─── Text (LLM) providers ────────────────────────────────────────────────────
 
@@ -125,6 +126,12 @@ const PROVIDERS: Record<string, ProviderEntry> = {
     productName: "Nebius TokenFactory",
     companyName: "Nebius",
     Modal: NebiusTokenfactoryModal,
+  },
+  [LLMProviderName.ZAI]: {
+    icon: ZAIIcon,
+    productName: "GLM",
+    companyName: "Z.AI",
+    Modal: ZAIModal,
   },
   [LLMProviderName.GOOGLE_AI_STUDIO]: {
     icon: SvgGemini,
