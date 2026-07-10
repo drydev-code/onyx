@@ -14,15 +14,11 @@ import { ImageGenFormBaseProps } from "@/views/admin/ImageGenerationPage/forms/t
 // Mocks
 // ---------------------------------------------------------------------------
 
-jest.mock("@/components/modals/ProviderModal", () => ({
+jest.mock("@/sections/modals/ProviderModal", () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="provider-modal">{children}</div>
   ),
-}));
-
-jest.mock("@/app/admin/configuration/llm/ProviderIcon", () => ({
-  ProviderIcon: () => <span data-testid="provider-icon" />,
 }));
 
 jest.mock("@/refresh-components/ConnectionProviderIcon", () => ({

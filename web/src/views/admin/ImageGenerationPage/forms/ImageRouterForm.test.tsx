@@ -16,18 +16,14 @@ import { ImageGenFormBaseProps } from "@/views/admin/ImageGenerationPage/forms/t
 
 // Mock the ProviderModal used by ImageGenFormWrapper so we do not need
 // the full modal portal / overlay infrastructure in tests.
-jest.mock("@/components/modals/ProviderModal", () => ({
+jest.mock("@/sections/modals/ProviderModal", () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="provider-modal">{children}</div>
   ),
 }));
 
-// Mock the icon components that are used in the form wrapper
-jest.mock("@/app/admin/configuration/llm/ProviderIcon", () => ({
-  ProviderIcon: () => <span data-testid="provider-icon" />,
-}));
-
+// Mock the icon component used in the form wrapper
 jest.mock("@/refresh-components/ConnectionProviderIcon", () => ({
   __esModule: true,
   default: () => <span data-testid="connection-provider-icon" />,

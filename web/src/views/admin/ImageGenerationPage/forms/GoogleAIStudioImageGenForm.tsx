@@ -61,7 +61,6 @@ function GoogleAIStudioFormFields(
                   ? "Loading..."
                   : "Enter your Google AI Studio API key"
               }
-              showClearButton={false}
               disabled={disabled}
               error={apiStatus === "error"}
             />

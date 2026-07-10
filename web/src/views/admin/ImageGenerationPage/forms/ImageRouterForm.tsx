@@ -92,7 +92,6 @@ function ImageRouterFormFields(
                     ? "Loading..."
                     : "Enter your ImageRouter API key"
                 }
-                showClearButton={false}
                 disabled={disabled}
                 error={apiStatus === "error"}
               />

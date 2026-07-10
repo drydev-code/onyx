@@ -7,7 +7,7 @@
  */
 
 import { render, screen, setupUser, waitFor } from "@tests/setup/test-utils";
-import ClaudeCodeCLIModal from "@/sections/modals/llmConfig/ClaudeCodeCLIModal";
+import ClaudeCodeCLIModal from "@/sections/modals/languageModels/ClaudeCodeCLIModal";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -46,8 +46,11 @@ jest.mock("@/hooks/useToast", () => {
   };
 });
 
-jest.mock("@/components/settings/usePaidEnterpriseFeaturesEnabled", () => ({
-  usePaidEnterpriseFeaturesEnabled: () => false,
+// Mock useTierAtLeast — return false so the test exercises the
+// non-paid-tier code path, matching the prior usePaidEnterpriseFeaturesEnabled
+// mock behavior.
+jest.mock("@/hooks/useTierAtLeast", () => ({
+  useTierAtLeast: () => false,
 }));
 
 // ---------------------------------------------------------------------------
@@ -219,14 +222,6 @@ describe("ClaudeCodeCLIModal", () => {
     });
 
     fetchSpy.mockRestore();
-  });
-
-  test("renders MCP Configuration field", () => {
-    render(<ClaudeCodeCLIModal onOpenChange={() => {}} />);
-
-    expect(
-      screen.getByLabelText(/mcp configuration/i)
-    ).toBeInTheDocument();
   });
 
 });

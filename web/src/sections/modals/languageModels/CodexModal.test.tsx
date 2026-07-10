@@ -6,7 +6,7 @@
  */
 
 import { render, screen, setupUser, waitFor } from "@tests/setup/test-utils";
-import CodexModal from "@/sections/modals/llmConfig/CodexModal";
+import CodexModal from "@/sections/modals/languageModels/CodexModal";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -45,8 +45,11 @@ jest.mock("@/hooks/useToast", () => {
   };
 });
 
-jest.mock("@/components/settings/usePaidEnterpriseFeaturesEnabled", () => ({
-  usePaidEnterpriseFeaturesEnabled: () => false,
+// Mock useTierAtLeast — return false so the test exercises the
+// non-paid-tier code path, matching the prior usePaidEnterpriseFeaturesEnabled
+// mock behavior.
+jest.mock("@/hooks/useTierAtLeast", () => ({
+  useTierAtLeast: () => false,
 }));
 
 // ---------------------------------------------------------------------------

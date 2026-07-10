@@ -58,7 +58,6 @@ OPENAI_CODEX_DISABLE_BUILTIN_TOOLS_KEY = "openai_codex_disable_builtin_tools"
 CLAUDE_CODE_CLI_PROVIDER_NAME = "claude_code_cli"
 CLAUDE_CODE_CLI_PATH_KEY = "cli_path"
 CLAUDE_CODE_AUTH_MODE_KEY = "auth_mode"
-CLAUDE_CODE_MCP_CONFIG_KEY = "mcp_config_json"
 CLAUDE_CODE_OAUTH_TOKEN_KEY = "oauth_token"
 CLAUDE_CODE_DISABLE_BUILTIN_TOOLS_KEY = "claude_code_disable_builtin_tools"
 
