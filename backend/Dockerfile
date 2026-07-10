@@ -15,6 +15,15 @@ ARG ENABLE_CRAFT=false
 # Use --build-arg ENABLE_CLI_PROVIDERS=true to include Claude Code and Codex CLIs
 ARG ENABLE_CLI_PROVIDERS=false
 
+# CLI provider versions. Default to `latest` so a base-image rebuild always picks
+# up the newest CLIs; pin to an exact version to freeze a build.
+ARG CLAUDE_CODE_CLI_VERSION=latest
+ARG CODEX_CLI_VERSION=latest
+
+# Surface the build flag at runtime so the entrypoint knows whether to refresh
+# the CLIs on container start (see scripts/update_cli_providers.sh).
+ENV ENABLE_CLI_PROVIDERS=${ENABLE_CLI_PROVIDERS}
+
 # DO_NOT_TRACK is used to disable telemetry for Unstructured
 ENV ONYX_RUNNING_IN_DOCKER="true" \
     DO_NOT_TRACK="true" \
@@ -88,12 +97,13 @@ RUN if [ "$ENABLE_CLI_PROVIDERS" = "true" ] && [ "$ENABLE_CRAFT" != "true" ]; th
 # Conditionally install Claude Code CLI and Codex CLI
 # Only installed when ENABLE_CLI_PROVIDERS=true
 RUN if [ "$ENABLE_CLI_PROVIDERS" = "true" ]; then \
-        echo "Installing Claude Code CLI..." && \
-        npm install -g @anthropic-ai/claude-code && \
-        echo "Installing OpenAI Codex CLI..." && \
-        npm install -g @openai/codex && \
-        mkdir -p /home/onyx/.claude && \
-        chown onyx:onyx /home/onyx/.claude; \
+        echo "Installing Claude Code CLI (${CLAUDE_CODE_CLI_VERSION})..." && \
+        npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_CLI_VERSION}" && \
+        echo "Installing OpenAI Codex CLI (${CODEX_CLI_VERSION})..." && \
+        npm install -g --no-fund --no-audit "@openai/codex@${CODEX_CLI_VERSION}" && \
+        claude --version && codex --version && \
+        mkdir -p /home/onyx/.claude /home/onyx/.codex && \
+        chown -R onyx:onyx /home/onyx/.claude /home/onyx/.codex; \
     fi
 
 # Install Python dependencies
@@ -174,7 +184,8 @@ COPY --chown=onyx:onyx ./scripts/reencrypt_secrets.py /app/scripts/reencrypt_sec
 COPY --chown=onyx:onyx ./scripts/rotate_llm_provider_keys.py /app/scripts/rotate_llm_provider_keys.py
 COPY --chown=onyx:onyx ./scripts/seed_dev_license.py /app/scripts/seed_dev_license.py
 COPY --chown=onyx:onyx ./scripts/force_auto_llm_sync.py /app/scripts/force_auto_llm_sync.py
-RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/setup_craft_templates.sh
+COPY --chown=onyx:onyx ./scripts/update_cli_providers.sh /app/scripts/update_cli_providers.sh
+RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/update_cli_providers.sh /app/scripts/setup_craft_templates.sh
 
 # Run Craft template setup at build time when ENABLE_CRAFT=true
 # This pre-bakes demo data, Python venv, and npm dependencies into the image
