@@ -298,10 +298,18 @@ def get_openai_codex_model_names() -> list[str]:
 
 
 def get_claude_code_cli_model_names() -> list[str]:
-    """Get Claude Code CLI model names (models available via the CLI)."""
+    """Get Claude Code CLI model names (models available via the CLI).
+
+    Newest first. The CLI passes this straight through to Anthropic as
+    ``--model``, so each entry must be a model id Anthropic serves; cross-check
+    against ``litellm.anthropic_models`` when adding a new release.
+    """
     return [
+        "claude-opus-4-8",
         "claude-opus-4-7",
         "claude-opus-4-6",
+        "claude-sonnet-5",
+        "claude-fable-5",
         "claude-sonnet-4-6",
         "claude-haiku-4-5",
     ]
