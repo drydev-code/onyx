@@ -28,6 +28,7 @@ import BedrockModal from "@/sections/modals/languageModels/BedrockModal";
 import VertexAIModal from "@/sections/modals/languageModels/VertexAIModal";
 import OpenRouterModal from "@/sections/modals/languageModels/OpenRouterModal";
 import CustomModal from "@/sections/modals/languageModels/CustomModal";
+import GoogleAIStudioModal from "@/sections/modals/languageModels/GoogleAIStudioModal";
 import LMStudioModal from "@/sections/modals/languageModels/LMStudioModal";
 import LiteLLMProxyModal from "@/sections/modals/languageModels/LiteLLMProxyModal";
 import BifrostModal from "@/sections/modals/languageModels/BifrostModal";
@@ -119,7 +120,7 @@ const PROVIDERS: Record<string, ProviderEntry> = {
     icon: SvgGemini,
     productName: "Gemini",
     companyName: "Google AI Studio",
-    Modal: CustomModal,
+    Modal: GoogleAIStudioModal,
   },
   [LLMProviderName.OPENAI_CODEX]: {
     icon: SvgOpenai,
