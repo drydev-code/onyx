@@ -7,43 +7,43 @@
 
 import React from "react";
 import { render, screen } from "@tests/setup/test-utils";
-import { getImageGenForm } from "@/refresh-pages/admin/ImageGenerationPage/forms/getImageGenForm";
-import { ImageGenFormBaseProps } from "@/refresh-pages/admin/ImageGenerationPage/forms/types";
+import { getImageGenForm } from "@/views/admin/ImageGenerationPage/forms/getImageGenForm";
+import { ImageGenFormBaseProps } from "@/views/admin/ImageGenerationPage/forms/types";
 
 // ---------------------------------------------------------------------------
 // Mock all form components to identify which one renders
 // ---------------------------------------------------------------------------
 
 jest.mock(
-  "@/refresh-pages/admin/ImageGenerationPage/forms/OpenAIImageGenForm",
+  "@/views/admin/ImageGenerationPage/forms/OpenAIImageGenForm",
   () => ({
     OpenAIImageGenForm: () => <div data-testid="OpenAIImageGenForm" />,
   })
 );
 
 jest.mock(
-  "@/refresh-pages/admin/ImageGenerationPage/forms/AzureImageGenForm",
+  "@/views/admin/ImageGenerationPage/forms/AzureImageGenForm",
   () => ({
     AzureImageGenForm: () => <div data-testid="AzureImageGenForm" />,
   })
 );
 
 jest.mock(
-  "@/refresh-pages/admin/ImageGenerationPage/forms/VertexImageGenForm",
+  "@/views/admin/ImageGenerationPage/forms/VertexImageGenForm",
   () => ({
     VertexImageGenForm: () => <div data-testid="VertexImageGenForm" />,
   })
 );
 
 jest.mock(
-  "@/refresh-pages/admin/ImageGenerationPage/forms/ImageRouterForm",
+  "@/views/admin/ImageGenerationPage/forms/ImageRouterForm",
   () => ({
     ImageRouterForm: () => <div data-testid="ImageRouterForm" />,
   })
 );
 
 jest.mock(
-  "@/refresh-pages/admin/ImageGenerationPage/forms/GoogleAIStudioImageGenForm",
+  "@/views/admin/ImageGenerationPage/forms/GoogleAIStudioImageGenForm",
   () => ({
     GoogleAIStudioImageGenForm: () => (
       <div data-testid="GoogleAIStudioImageGenForm" />

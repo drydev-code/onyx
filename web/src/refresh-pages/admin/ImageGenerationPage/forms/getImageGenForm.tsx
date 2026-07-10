@@ -1,10 +1,10 @@
 import React from "react";
-import { ImageGenFormBaseProps } from "@/refresh-pages/admin/ImageGenerationPage/forms/types";
-import { OpenAIImageGenForm } from "@/refresh-pages/admin/ImageGenerationPage/forms/OpenAIImageGenForm";
-import { AzureImageGenForm } from "@/refresh-pages/admin/ImageGenerationPage/forms/AzureImageGenForm";
-import { VertexImageGenForm } from "@/refresh-pages/admin/ImageGenerationPage/forms/VertexImageGenForm";
-import { ImageRouterForm } from "@/refresh-pages/admin/ImageGenerationPage/forms/ImageRouterForm";
-import { GoogleAIStudioImageGenForm } from "@/refresh-pages/admin/ImageGenerationPage/forms/GoogleAIStudioImageGenForm";
+import { ImageGenFormBaseProps } from "@/views/admin/ImageGenerationPage/forms/types";
+import { OpenAIImageGenForm } from "@/views/admin/ImageGenerationPage/forms/OpenAIImageGenForm";
+import { AzureImageGenForm } from "@/views/admin/ImageGenerationPage/forms/AzureImageGenForm";
+import { VertexImageGenForm } from "@/views/admin/ImageGenerationPage/forms/VertexImageGenForm";
+import { ImageRouterForm } from "@/views/admin/ImageGenerationPage/forms/ImageRouterForm";
+import { GoogleAIStudioImageGenForm } from "@/views/admin/ImageGenerationPage/forms/GoogleAIStudioImageGenForm";
 
 /**
  * Factory function that routes to the correct provider-specific form

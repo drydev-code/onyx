@@ -7,22 +7,18 @@
 
 import React from "react";
 import { render, screen } from "@tests/setup/test-utils";
-import { GoogleAIStudioImageGenForm } from "@/refresh-pages/admin/ImageGenerationPage/forms/GoogleAIStudioImageGenForm";
-import { ImageGenFormBaseProps } from "@/refresh-pages/admin/ImageGenerationPage/forms/types";
+import { GoogleAIStudioImageGenForm } from "@/views/admin/ImageGenerationPage/forms/GoogleAIStudioImageGenForm";
+import { ImageGenFormBaseProps } from "@/views/admin/ImageGenerationPage/forms/types";
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-jest.mock("@/components/modals/ProviderModal", () => ({
+jest.mock("@/sections/modals/ProviderModal", () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="provider-modal">{children}</div>
   ),
-}));
-
-jest.mock("@/app/admin/configuration/llm/ProviderIcon", () => ({
-  ProviderIcon: () => <span data-testid="provider-icon" />,
 }));
 
 jest.mock("@/refresh-components/ConnectionProviderIcon", () => ({
@@ -50,7 +46,7 @@ jest.mock("@/hooks/useToast", () => {
   };
 });
 
-jest.mock("@/refresh-pages/admin/ImageGenerationPage/svc", () => ({
+jest.mock("@/views/admin/ImageGenerationPage/svc", () => ({
   testImageGenerationApiKey: jest.fn(),
   createImageGenerationConfig: jest.fn(),
   updateImageGenerationConfig: jest.fn(),
