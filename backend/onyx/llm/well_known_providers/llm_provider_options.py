@@ -1,5 +1,3 @@
-import json
-import pathlib
 import threading
 import time
 
@@ -10,17 +8,20 @@ from onyx.llm.utils import get_max_input_tokens
 from onyx.llm.utils import model_supports_image_input
 from onyx.llm.well_known_providers.auto_update_models import LLMRecommendations
 from onyx.llm.well_known_providers.auto_update_service import (
-    fetch_llm_recommendations_from_github,
+    get_merged_recommendations,
 )
 from onyx.llm.well_known_providers.constants import ANTHROPIC_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import AZURE_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import BEDROCK_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import BIFROST_PROVIDER_NAME
+from onyx.llm.well_known_providers.constants import CLAUDE_CODE_CLI_PROVIDER_NAME
+from onyx.llm.well_known_providers.constants import GOOGLE_AI_STUDIO_PROVIDER_NAME
+from onyx.llm.well_known_providers.constants import OPENAI_CODEX_PROVIDER_NAME
+from onyx.llm.well_known_providers.constants import OPENAI_COMPATIBLE_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import LITELLM_PROXY_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import LM_STUDIO_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import NEBIUS_TOKENFACTORY_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import OLLAMA_PROVIDER_NAME
-from onyx.llm.well_known_providers.constants import OPENAI_COMPATIBLE_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import OPENAI_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import OPENROUTER_PROVIDER_NAME
 from onyx.llm.well_known_providers.constants import VERTEXAI_PROVIDER_NAME
@@ -55,19 +56,19 @@ def _get_provider_to_models_map() -> dict[str, list[str]]:
         BIFROST_PROVIDER_NAME: [],  # Dynamic - fetched from Bifrost API
         OPENAI_COMPATIBLE_PROVIDER_NAME: [],  # Dynamic - fetched from OpenAI-compatible API
         NEBIUS_TOKENFACTORY_PROVIDER_NAME: [],  # Dynamic - fetched from /v1/models
+        GOOGLE_AI_STUDIO_PROVIDER_NAME: get_google_ai_studio_model_names(),
+        OPENAI_CODEX_PROVIDER_NAME: get_openai_codex_model_names(),
+        CLAUDE_CODE_CLI_PROVIDER_NAME: get_claude_code_cli_model_names(),
     }
-
-
-def _load_bundled_recommendations() -> LLMRecommendations:
-    json_path = pathlib.Path(__file__).parent / "recommended-models.json"
-    with open(json_path, "r") as f:
-        json_config = json.load(f)
-    return LLMRecommendations.model_validate(json_config)
 
 
 def get_recommendations() -> LLMRecommendations:
     """Get the recommendations, with an in-memory cache to avoid
-    hitting GitHub on every API request."""
+    hitting GitHub on every API request.
+
+    Delegates to ``get_merged_recommendations`` so the read path and the
+    background sync path always agree on the merge + dynamic detection rules.
+    """
     global _cached_recommendations, _cached_recommendations_time
 
     now = time.monotonic()
@@ -86,9 +87,7 @@ def get_recommendations() -> LLMRecommendations:
         ):
             return _cached_recommendations
 
-        recommendations_from_github = fetch_llm_recommendations_from_github()
-        result = recommendations_from_github or _load_bundled_recommendations()
-
+        result = get_merged_recommendations()
         _cached_recommendations = result
         _cached_recommendations_time = time.monotonic()
         return result
@@ -249,6 +248,67 @@ def get_vertexai_model_names() -> list[str]:
     )
 
 
+def get_google_ai_studio_model_names() -> list[str]:
+    """Get Google AI Studio model names from litellm's gemini model list.
+
+    Falls back to a curated allowlist if LiteLLM discovery returns no models
+    (e.g. model_cost not yet populated at import time).
+    """
+    import litellm
+
+    _CURATED_GEMINI_MODELS: list[str] = [
+        "gemini-3-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+    ]
+
+    models: set[str] = set()
+    for key in list(litellm.model_cost.keys()):
+        if key.startswith("gemini/"):
+            model_name = key.removeprefix("gemini/")
+            if (
+                "embed" not in model_name.lower()
+                and "image" not in model_name.lower()
+                and "video" not in model_name.lower()
+                and "tts" not in model_name.lower()
+                and "live" not in model_name.lower()
+                and "veo" not in model_name.lower()
+                and "native-audio" not in model_name.lower()
+                and "search" not in model_name.lower()
+                and "lyria" not in model_name.lower()  # music generation
+                and "learnlm" not in model_name.lower()  # education-specific
+                and "robotics" not in model_name.lower()  # robotics models
+                and "code" not in model_name.lower()  # code-specific (non-chat)
+            ):
+                models.add(model_name)
+
+    if not models:
+        return _CURATED_GEMINI_MODELS
+
+    return sorted(models, reverse=True)
+
+
+def get_openai_codex_model_names() -> list[str]:
+    """Get OpenAI Codex CLI model names (models the @openai/codex CLI supports)."""
+    return [
+        "gpt-5.1-codex",
+        "gpt-5.1",
+        "gpt-5.1-codex-mini",
+    ]
+
+
+def get_claude_code_cli_model_names() -> list[str]:
+    """Get Claude Code CLI model names (models available via the CLI)."""
+    return [
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+    ]
+
+
 def model_configurations_for_provider(
     provider_name: str, llm_recommendations: LLMRecommendations
 ) -> list[ModelConfigurationView]:
@@ -350,6 +410,9 @@ def get_provider_display_name(provider_name: str) -> str:
         LITELLM_PROXY_PROVIDER_NAME: "LiteLLM Proxy",
         OPENAI_COMPATIBLE_PROVIDER_NAME: "OpenAI-Compatible",
         NEBIUS_TOKENFACTORY_PROVIDER_NAME: "Nebius TokenFactory",
+        GOOGLE_AI_STUDIO_PROVIDER_NAME: "Gemini (Google AI Studio)",
+        OPENAI_CODEX_PROVIDER_NAME: "OpenAI Codex",
+        CLAUDE_CODE_CLI_PROVIDER_NAME: "Claude Code CLI",
     }
 
     if provider_name in _ONYX_PROVIDER_DISPLAY_NAMES:

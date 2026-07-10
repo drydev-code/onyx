@@ -15,7 +15,10 @@ from botocore.tokens import TokenProviderChain
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Query
+from pydantic import BaseModel
 from pydantic import ValidationError
+
+from onyx.llm.constants import LlmProviderNames
 from sqlalchemy.orm import Session
 
 from onyx.auth.permissions import require_permission
@@ -56,7 +59,7 @@ from onyx.llm.utils import is_sensitive_custom_config_key
 from onyx.llm.utils import litellm_thinks_model_supports_image_input
 from onyx.llm.utils import test_llm
 from onyx.llm.well_known_providers.auto_update_service import (
-    fetch_llm_recommendations_from_github,
+    get_merged_recommendations,
 )
 from onyx.llm.well_known_providers.constants import LM_STUDIO_API_KEY_CONFIG_KEY
 from onyx.llm.well_known_providers.constants import VERTEX_AUTH_METHOD_KWARG
@@ -86,14 +89,14 @@ from onyx.server.manage.llm.models import LLMProviderUpsertRequest
 from onyx.server.manage.llm.models import LLMProviderView
 from onyx.server.manage.llm.models import LMStudioFinalModelResponse
 from onyx.server.manage.llm.models import LMStudioModelsRequest
+from onyx.server.manage.llm.models import OpenAICompatibleFinalModelResponse
+from onyx.server.manage.llm.models import OpenAICompatibleModelsRequest
 from onyx.server.manage.llm.models import ModelConfigurationUpsertRequest
 from onyx.server.manage.llm.models import NebiusTokenfactoryFinalModelResponse
 from onyx.server.manage.llm.models import NebiusTokenfactoryModelsRequest
 from onyx.server.manage.llm.models import OllamaFinalModelResponse
 from onyx.server.manage.llm.models import OllamaModelDetails
 from onyx.server.manage.llm.models import OllamaModelsRequest
-from onyx.server.manage.llm.models import OpenAICompatibleFinalModelResponse
-from onyx.server.manage.llm.models import OpenAICompatibleModelsRequest
 from onyx.server.manage.llm.models import OpenRouterFinalModelResponse
 from onyx.server.manage.llm.models import OpenRouterModelDetails
 from onyx.server.manage.llm.models import OpenRouterModelsRequest
@@ -456,6 +459,35 @@ def test_llm_configuration(
     # Therefore, instead of performing additional, more complex logic, we just use a dummy value
     max_input_tokens = -1
 
+    # OpenAI Codex with OAuth tokens uses ChatGPT session auth which routes
+    # through chatgpt.com/backend-api — protected by Cloudflare and incompatible
+    # with server-to-server HTTP validation. The token can only be used via the
+    # Codex CLI which handles Cloudflare challenges.
+    # When OAuth token is present, accept the configuration without a test call.
+    # When using an API key instead, fall through to the standard LiteLLM test.
+    if test_llm_request.provider == LlmProviderNames.OPENAI_CODEX:
+        from onyx.llm.well_known_providers.constants import (
+            OPENAI_CODEX_ACCESS_TOKEN_KEY,
+        )
+
+        has_oauth = (
+            test_custom_config
+            and test_custom_config.get(OPENAI_CODEX_ACCESS_TOKEN_KEY)
+        )
+        if has_oauth:
+            return  # OAuth token accepted — validated during device auth flow
+
+    # Claude Code CLI uses subprocess - test by running a simple command
+    if test_llm_request.provider == LlmProviderNames.CLAUDE_CODE_CLI:
+        from onyx.llm.cli_availability import check_claude_cli_available
+
+        if not check_claude_cli_available():
+            raise OnyxError(
+                OnyxErrorCode.VALIDATION_ERROR,
+                "Claude Code CLI ('claude') is not installed or not accessible on the server.",
+            )
+        return
+
     llm = get_llm(
         provider=test_llm_request.provider,
         model=test_llm_request.model,
@@ -636,12 +668,14 @@ def put_llm_provider(
             db_session=db_session,
         )
 
-        # If newly enabling Auto mode, sync models immediately from GitHub config
+        # If newly enabling Auto mode, sync models immediately. Use the merged
+        # bundled+GitHub config so providers that only live in the bundled file
+        # (zai, google_ai_studio, openai_codex, claude_code_cli) get synced too.
         if transitioning_to_auto_mode:
             from onyx.db.llm import sync_auto_mode_models
 
-            config = fetch_llm_recommendations_from_github()
-            if config and llm_provider_upsert_request.provider in config.providers:
+            config = get_merged_recommendations()
+            if llm_provider_upsert_request.provider in config.providers:
                 updated_provider = fetch_existing_llm_provider_by_id(
                     id=result.id, db_session=db_session
                 )
@@ -738,17 +772,13 @@ def set_provider_as_default_vision(
 def get_auto_config(
     _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
 ) -> dict:
-    """Get the current Auto mode configuration from GitHub.
+    """Get the current Auto mode configuration.
 
-    Returns the available models and default configurations for each
-    supported provider type when using Auto mode.
+    Returns the merged bundled+GitHub config so the response covers every
+    provider that the backend knows about, including ones the upstream JSON
+    doesn't list yet (e.g. zai, google_ai_studio, openai_codex, claude_code_cli).
     """
-    config = fetch_llm_recommendations_from_github()
-    if not config:
-        raise OnyxError(
-            OnyxErrorCode.BAD_GATEWAY,
-            "Failed to fetch configuration from GitHub",
-        )
+    config = get_merged_recommendations()
     return config.model_dump()
 
 
@@ -2116,3 +2146,111 @@ def _get_openai_compatible_server_response(
         source_name="OpenAI-Compatible",
         api_key=api_key,
     )
+
+
+# ---- OpenAI Codex OAuth endpoints ----
+
+
+class CodexDeviceAuthResponse(BaseModel):
+    device_code: str  # device_auth_id from OpenAI
+    user_code: str
+    verification_uri: str
+    expires_in: int
+    interval: int
+
+
+class CodexDeviceAuthPollRequest(BaseModel):
+    device_code: str  # device_auth_id
+    user_code: str
+
+
+class CodexPollResponse(BaseModel):
+    status: str  # "pending", "authorized", "error"
+    access_token: str | None = None
+    refresh_token: str | None = None
+    id_token: str | None = None
+    expires_in: int | None = None
+    error: str | None = None
+
+
+@admin_router.post("/codex/device-auth")
+def initiate_codex_device_auth(
+    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+) -> CodexDeviceAuthResponse:
+    """Initiate OpenAI Codex device code authorization flow."""
+    from onyx.server.manage.llm.codex_oauth import initiate_device_auth
+
+    auth = initiate_device_auth()
+    return CodexDeviceAuthResponse(
+        device_code=auth.device_auth_id,
+        user_code=auth.user_code,
+        verification_uri=auth.verification_uri,
+        expires_in=900,  # 15 minutes
+        interval=auth.interval,
+    )
+
+
+@admin_router.post("/codex/device-auth/poll")
+def poll_codex_device_auth(
+    request: CodexDeviceAuthPollRequest,
+    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+) -> CodexPollResponse:
+    """Poll for token after user authorizes via device code flow."""
+    from onyx.server.manage.llm.codex_oauth import poll_for_token
+
+    try:
+        token = poll_for_token(request.device_code, request.user_code)
+        if token is None:
+            return CodexPollResponse(status="pending")
+        return CodexPollResponse(
+            status="authorized",
+            access_token=token.access_token,
+            refresh_token=token.refresh_token,
+            id_token=token.id_token,
+            expires_in=token.expires_in,
+        )
+    except ValueError as e:
+        return CodexPollResponse(status="error", error=str(e))
+
+
+class ClaudeCLISetupTokenRequest(BaseModel):
+    oauth_token: str
+    cli_path: str = "claude"
+
+
+class ClaudeCLISetupTokenResponse(BaseModel):
+    status: str  # "ok" or "error"
+    error: str | None = None
+    cli_version: str | None = None
+
+
+@admin_router.post("/claude-cli/setup-token")
+def setup_claude_cli_token(
+    request: ClaudeCLISetupTokenRequest,
+    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+) -> ClaudeCLISetupTokenResponse:
+    """Validate and accept a Claude Code CLI OAuth token.
+
+    Runs a quick CLI command with the token set as CLAUDE_CODE_OAUTH_TOKEN
+    to verify the CLI is reachable and the token format is plausible.
+    """
+    from onyx.server.manage.llm.claude_cli_auth import validate_oauth_token
+
+    error = validate_oauth_token(
+        oauth_token=request.oauth_token,
+        cli_path=request.cli_path,
+    )
+    if error:
+        return ClaudeCLISetupTokenResponse(status="error", error=error)
+
+    return ClaudeCLISetupTokenResponse(status="ok")
+
+
+@admin_router.get("/cli-availability")
+def get_cli_availability_endpoint(
+    _: User = Depends(require_permission(Permission.FULL_ADMIN_PANEL_ACCESS)),
+) -> dict[str, bool]:
+    """Return which CLI tools (Claude Code, Codex) are available on the server."""
+    from onyx.llm.cli_availability import get_cli_availability
+
+    return get_cli_availability()

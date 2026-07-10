@@ -45,6 +45,9 @@ export enum LLMProviderName {
   BIFROST = "bifrost",
   OPENAI_COMPATIBLE = "openai_compatible",
   NEBIUS_TOKENFACTORY = "nebius_tokenfactory",
+  GOOGLE_AI_STUDIO = "google_ai_studio",
+  OPENAI_CODEX = "openai_codex",
+  CLAUDE_CODE_CLI = "claude_code_cli",
   CUSTOM = "custom",
 }
 
@@ -200,6 +203,18 @@ export interface BifrostModelResponse {
   supports_reasoning: boolean;
 }
 
+export interface VertexAIFetchParams {
+  model_configurations?: ModelConfiguration[];
+}
+
+export interface LMStudioFetchParams {
+  api_base?: string;
+  api_key?: string;
+  api_key_changed?: boolean;
+  provider_name?: string;
+  signal?: AbortSignal;
+}
+
 export interface OpenAICompatibleFetchParams {
   api_base?: string;
   api_key?: string;
@@ -252,6 +267,6 @@ export type FetchModelsParams =
   | OpenRouterFetchParams
   | LiteLLMProxyFetchParams
   | BifrostFetchParams
-  | OpenAICompatibleFetchParams
   | VertexAIFetchParams
-  | LMStudioFetchParams;
+  | LMStudioFetchParams
+  | OpenAICompatibleFetchParams;
