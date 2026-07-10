@@ -34,4 +34,10 @@ COPY --chown=onyx:onyx ./alembic /app/alembic
 COPY --chown=onyx:onyx ./alembic_tenants /app/alembic_tenants
 COPY --chown=onyx:onyx ./alembic.ini /app/alembic.ini
 COPY --chown=onyx:onyx ./scripts /app/scripts
-RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/update_cli_providers.sh
+RUN chmod +x /app/scripts/supervisord_entrypoint.sh \
+             /app/scripts/update_cli_providers.sh \
+             /app/scripts/docker_entrypoint.sh
+
+# Also set here (not just in the base image) so the CLI refresh takes effect on
+# a code-only rebuild, without waiting for the next craft-base rebuild.
+ENTRYPOINT ["/app/scripts/docker_entrypoint.sh"]

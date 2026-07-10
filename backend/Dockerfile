@@ -234,7 +234,8 @@ COPY --chown=onyx:onyx ./scripts/rotate_llm_provider_keys.py /app/scripts/rotate
 COPY --chown=onyx:onyx ./scripts/seed_dev_license.py /app/scripts/seed_dev_license.py
 COPY --chown=onyx:onyx ./scripts/force_auto_llm_sync.py /app/scripts/force_auto_llm_sync.py
 COPY --chown=onyx:onyx ./scripts/update_cli_providers.sh /app/scripts/update_cli_providers.sh
-RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/update_cli_providers.sh
+COPY --chown=onyx:onyx ./scripts/docker_entrypoint.sh /app/scripts/docker_entrypoint.sh
+RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/update_cli_providers.sh /app/scripts/docker_entrypoint.sh
 
 # Put logo in assets
 COPY --chown=onyx:onyx ./assets /app/assets
@@ -251,6 +252,12 @@ ENV ONYX_VERSION=${ONYX_VERSION}
 # the correct path from standard library directories.
 # Placed after all RUN steps so build-time processes are unaffected.
 ENV LD_PRELOAD=libjemalloc.so.2
+
+# Refresh the CLI providers, then exec whatever command the deployment supplies.
+# It must be an ENTRYPOINT rather than a hook inside supervisord_entrypoint.sh:
+# some compose files start api_server with uvicorn directly and never reach that
+# script. No-op unless ENABLE_CLI_PROVIDERS=true.
+ENTRYPOINT ["/app/scripts/docker_entrypoint.sh"]
 
 # Default command which does nothing
 # This container is used by api server and background which specify their own CMD
