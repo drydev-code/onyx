@@ -7,8 +7,8 @@
 
 import React from "react";
 import { render, screen } from "@tests/setup/test-utils";
-import { ImageRouterForm } from "@/refresh-pages/admin/ImageGenerationPage/forms/ImageRouterForm";
-import { ImageGenFormBaseProps } from "@/refresh-pages/admin/ImageGenerationPage/forms/types";
+import { ImageRouterForm } from "@/views/admin/ImageGenerationPage/forms/ImageRouterForm";
+import { ImageGenFormBaseProps } from "@/views/admin/ImageGenerationPage/forms/types";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -16,16 +16,11 @@ import { ImageGenFormBaseProps } from "@/refresh-pages/admin/ImageGenerationPage
 
 // Mock the ProviderModal used by ImageGenFormWrapper so we do not need
 // the full modal portal / overlay infrastructure in tests.
-jest.mock("@/components/modals/ProviderModal", () => ({
+jest.mock("@/sections/modals/ProviderModal", () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="provider-modal">{children}</div>
   ),
-}));
-
-// Mock the icon components that are used in the form wrapper
-jest.mock("@/app/admin/configuration/llm/ProviderIcon", () => ({
-  ProviderIcon: () => <span data-testid="provider-icon" />,
 }));
 
 jest.mock("@/refresh-components/ConnectionProviderIcon", () => ({
@@ -54,7 +49,7 @@ jest.mock("@/hooks/useToast", () => {
 });
 
 // Mock the image generation service calls
-jest.mock("@/refresh-pages/admin/ImageGenerationPage/svc", () => ({
+jest.mock("@/views/admin/ImageGenerationPage/svc", () => ({
   testImageGenerationApiKey: jest.fn(),
   createImageGenerationConfig: jest.fn(),
   updateImageGenerationConfig: jest.fn(),

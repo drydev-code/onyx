@@ -5,14 +5,14 @@ import * as Yup from "yup";
 import { FormikField } from "@/refresh-components/form/FormikField";
 import { FormField } from "@/refresh-components/form/FormField";
 import PasswordInputTypeIn from "@/refresh-components/inputs/PasswordInputTypeIn";
-import { ImageGenFormWrapper } from "@/refresh-pages/admin/ImageGenerationPage/forms/ImageGenFormWrapper";
+import { ImageGenFormWrapper } from "@/views/admin/ImageGenerationPage/forms/ImageGenFormWrapper";
 import {
   ImageGenFormBaseProps,
   ImageGenFormChildProps,
   ImageGenSubmitPayload,
-} from "@/refresh-pages/admin/ImageGenerationPage/forms/types";
-import { ImageGenerationCredentials } from "@/refresh-pages/admin/ImageGenerationPage/svc";
-import { ImageProvider } from "@/refresh-pages/admin/ImageGenerationPage/constants";
+} from "@/views/admin/ImageGenerationPage/forms/types";
+import { ImageGenerationCredentials } from "@/views/admin/ImageGenerationPage/svc";
+import { ImageProvider } from "@/views/admin/ImageGenerationPage/constants";
 
 interface ImageRouterFormValues {
   api_key: string;
@@ -92,7 +92,6 @@ function ImageRouterFormFields(
                     ? "Loading..."
                     : "Enter your ImageRouter API key"
                 }
-                showClearButton={false}
                 disabled={disabled}
                 error={apiStatus === "error"}
               />
