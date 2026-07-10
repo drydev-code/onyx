@@ -192,14 +192,21 @@ def test_get_claude_code_cli_model_names_contains_expected_models() -> None:
     assert "claude-haiku-4-5" in models
 
 
-def test_get_openai_codex_model_names_returns_seven_models() -> None:
-    """get_openai_codex_model_names should return exactly 7 models."""
+def test_get_openai_codex_model_names_returns_six_models() -> None:
+    """get_openai_codex_model_names should return exactly 6 models."""
     models = get_openai_codex_model_names()
-    assert len(models) == 7
+    assert len(models) == 6
 
 
 def test_get_openai_codex_model_names_contains_expected_models() -> None:
     """get_openai_codex_model_names should contain the expected model names."""
     models = get_openai_codex_model_names()
-    expected = {"gpt-5.4", "gpt-5.2", "o4-mini", "o3", "o3-mini", "gpt-4.1", "gpt-4.1-mini"}
+    expected = {
+        "gpt-5.5-codex",
+        "gpt-5.5",
+        "gpt-5.5-codex-mini",
+        "gpt-5.1-codex",
+        "gpt-5.1",
+        "gpt-5.1-codex-mini",
+    }
     assert set(models) == expected

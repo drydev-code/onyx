@@ -28,4 +28,4 @@ COPY --chown=onyx:onyx ./alembic /app/alembic
 COPY --chown=onyx:onyx ./alembic_tenants /app/alembic_tenants
 COPY --chown=onyx:onyx ./alembic.ini /app/alembic.ini
 COPY --chown=onyx:onyx ./scripts /app/scripts
-RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/setup_craft_templates.sh 2>/dev/null || true
+RUN chmod +x /app/scripts/supervisord_entrypoint.sh

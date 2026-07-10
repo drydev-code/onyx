@@ -64,6 +64,14 @@ have a contract or agreement with DanswerAI, you are not permitted to use the En
 Edition features outside of personal development or testing purposes. Please reach out to \
 founders@onyx.app for more information. Please visit https://github.com/onyx-dot-app/onyx"
 
+# Build argument for Craft support (disabled by default)
+# Use --build-arg ENABLE_CRAFT=true to include Node.js and the opencode CLI
+ARG ENABLE_CRAFT=false
+
+# Build argument for CLI provider support (disabled by default)
+# Use --build-arg ENABLE_CLI_PROVIDERS=true to include the Claude Code and Codex CLIs
+ARG ENABLE_CLI_PROVIDERS=false
+
 # DO_NOT_TRACK is used to disable telemetry for Unstructured
 ENV ONYX_RUNNING_IN_DOCKER="true" \
     DO_NOT_TRACK="true" \
@@ -101,6 +109,44 @@ RUN apt-get update && \
         && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get clean
+
+# Conditionally install Node.js 20 for Craft (required for Next.js)
+# Only installed when ENABLE_CRAFT=true
+RUN if [ "$ENABLE_CRAFT" = "true" ]; then \
+        echo "Installing Node.js 20 for Craft support..." && \
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+        apt-get install -y nodejs && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Conditionally install opencode CLI for Craft agent functionality
+# Only installed when ENABLE_CRAFT=true
+# TODO: download a specific, versioned release of the opencode CLI
+RUN if [ "$ENABLE_CRAFT" = "true" ]; then \
+        echo "Installing opencode CLI for Craft support..." && \
+        curl -fsSL https://opencode.ai/install | bash; \
+    fi
+ENV PATH="/root/.opencode/bin:${PATH}"
+
+# Conditionally install Node.js for CLI providers (if not already installed by Craft)
+# Only installed when ENABLE_CLI_PROVIDERS=true and ENABLE_CRAFT is not already true
+RUN if [ "$ENABLE_CLI_PROVIDERS" = "true" ] && [ "$ENABLE_CRAFT" != "true" ]; then \
+        echo "Installing Node.js 20 for CLI provider support..." && \
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+        apt-get install -y nodejs && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Conditionally install Claude Code CLI and Codex CLI
+# Only installed when ENABLE_CLI_PROVIDERS=true
+RUN if [ "$ENABLE_CLI_PROVIDERS" = "true" ]; then \
+        echo "Installing Claude Code CLI..." && \
+        npm install -g @anthropic-ai/claude-code && \
+        echo "Installing OpenAI Codex CLI..." && \
+        npm install -g @openai/codex && \
+        mkdir -p /home/onyx/.claude && \
+        chown onyx:onyx /home/onyx/.claude; \
+    fi
 
 # Copy the compiled Python packages and only the console scripts our services launch (api server,
 # celery workers/beat, alembic migrations, supervisord, Playwright). Both stages share the same base
@@ -174,6 +220,7 @@ COPY --chown=onyx:onyx ./scripts/supervisord_entrypoint.sh /app/scripts/supervis
 COPY --chown=onyx:onyx ./scripts/reencrypt_secrets.py /app/scripts/reencrypt_secrets.py
 COPY --chown=onyx:onyx ./scripts/rotate_llm_provider_keys.py /app/scripts/rotate_llm_provider_keys.py
 COPY --chown=onyx:onyx ./scripts/seed_dev_license.py /app/scripts/seed_dev_license.py
+COPY --chown=onyx:onyx ./scripts/force_auto_llm_sync.py /app/scripts/force_auto_llm_sync.py
 RUN chmod +x /app/scripts/supervisord_entrypoint.sh
 
 # Put logo in assets
