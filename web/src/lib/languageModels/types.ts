@@ -68,6 +68,7 @@ export enum LLMProviderName {
   OPENAI_COMPATIBLE = "openai_compatible",
   NEBIUS_TOKENFACTORY = "nebius_tokenfactory",
   PORTKEY = "portkey",
+  ZAI = "zai",
   GOOGLE_AI_STUDIO = "google_ai_studio",
   OPENAI_CODEX = "openai_codex",
   CLAUDE_CODE_CLI = "claude_code_cli",

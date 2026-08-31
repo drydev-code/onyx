@@ -15,7 +15,7 @@ export interface BuildLlmSelection {
   modelName: string; // e.g., "claude-opus-4-7"
 }
 
-export type ProviderKey = "anthropic" | "openai" | "openrouter";
+export type ProviderKey = "anthropic" | "openai" | "openrouter" | "zai";
 
 export const CRAFT_GATEWAY_PROVIDER = "onyx";
 
@@ -31,6 +31,7 @@ export const CRAFT_PROVIDERS: ProviderKey[] = [
   "anthropic",
   "openai",
   "openrouter",
+  "zai",
 ];
 
 const CRAFT_PROVIDER_KEYS = new Set<string>(CRAFT_PROVIDERS);

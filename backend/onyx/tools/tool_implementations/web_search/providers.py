@@ -20,6 +20,9 @@ from onyx.tools.tool_implementations.web_search.clients.google_pse_client import
 from onyx.tools.tool_implementations.web_search.clients.searxng_client import (
     SearXNGClient,
 )
+from onyx.tools.tool_implementations.web_search.clients.glm_client import (
+    GLMClient,
+)
 from onyx.tools.tool_implementations.web_search.clients.serper_client import (
     SerperClient,
 )
@@ -117,6 +120,9 @@ def build_search_provider_from_config(
             topic=config.get("topic"),
             country=config.get("country"),
         )
+    if provider_type == WebSearchProviderType.GLM:
+        transport = config.get("transport", "rest")  # "rest" or "mcp"
+        return GLMClient(api_key=api_key, num_results=num_results, transport=transport)
     if provider_type == WebSearchProviderType.GOOGLE_PSE:
         search_engine_id = (
             config.get("search_engine_id")

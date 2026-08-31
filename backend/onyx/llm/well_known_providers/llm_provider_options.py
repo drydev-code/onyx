@@ -33,6 +33,7 @@ from onyx.llm.well_known_providers.constants import (
     OPENROUTER_PROVIDER_NAME,
     PORTKEY_PROVIDER_NAME,
     VERTEXAI_PROVIDER_NAME,
+    ZAI_PROVIDER_NAME,
 )
 from onyx.llm.well_known_providers.models import WellKnownLLMProviderDescriptor
 from onyx.server.manage.llm.models import ModelConfigurationView
@@ -66,6 +67,7 @@ def _get_provider_to_models_map() -> dict[str, list[str]]:
         OPENAI_COMPATIBLE_PROVIDER_NAME: [],  # Dynamic - fetched from OpenAI-compatible API
         NEBIUS_TOKENFACTORY_PROVIDER_NAME: [],  # Dynamic - fetched from /v1/models
         PORTKEY_PROVIDER_NAME: [],  # Dynamic - fetched from the Portkey gateway
+        ZAI_PROVIDER_NAME: get_zai_model_names(),
         GOOGLE_AI_STUDIO_PROVIDER_NAME: get_google_ai_studio_model_names(),
         OPENAI_CODEX_PROVIDER_NAME: get_openai_codex_model_names(),
         CLAUDE_CODE_CLI_PROVIDER_NAME: get_claude_code_cli_model_names(),
@@ -258,6 +260,11 @@ def get_vertexai_model_names() -> list[str]:
     )
 
 
+def get_zai_model_names() -> list[str]:
+    """Get Z.AI GLM model names (static list)."""
+    return ["glm-5.1", "glm-5-turbo", "glm-5v-turbo"]
+
+
 def get_google_ai_studio_model_names() -> list[str]:
     """Get Google AI Studio model names from litellm's gemini model list.
 
@@ -427,6 +434,7 @@ def get_provider_display_name(provider_name: str) -> str:
         OPENAI_COMPATIBLE_PROVIDER_NAME: "OpenAI-Compatible",
         NEBIUS_TOKENFACTORY_PROVIDER_NAME: "Nebius TokenFactory",
         PORTKEY_PROVIDER_NAME: "Portkey",
+        ZAI_PROVIDER_NAME: "GLM (Z.AI)",
         GOOGLE_AI_STUDIO_PROVIDER_NAME: "Gemini (Google AI Studio)",
         OPENAI_CODEX_PROVIDER_NAME: "OpenAI Codex",
         CLAUDE_CODE_CLI_PROVIDER_NAME: "Claude Code CLI",

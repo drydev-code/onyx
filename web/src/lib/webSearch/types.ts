@@ -8,7 +8,8 @@ export type WebSearchProviderType =
   | "exa"
   | "searxng"
   | "brave"
-  | "tavily";
+  | "tavily"
+  | "glm";
 
 export type WebContentProviderType =
   | "firecrawl"
@@ -91,6 +92,11 @@ export interface ConfigFieldSpec {
   placeholder: string;
   subDescription?: string | RichStr;
   defaultValue?: string;
+  options?: ReadonlyArray<{
+    value: string;
+    label: string;
+    description?: string | RichStr;
+  }>;
 }
 
 // ── Provider detail registry types ───────────────────────────────────────────
