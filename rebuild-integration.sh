@@ -20,6 +20,7 @@ DEFAULT_FEATURE_BRANCHES=(
     "feature/claude-code"
     "feature/branding"
     "feature/virtual-llm-routing"
+    "integration/fixes"
 )
 
 usage() {
@@ -59,6 +60,7 @@ Default feature merge order:
   7. feature/claude-code
   8. feature/branding
   9. feature/virtual-llm-routing
+  10. integration/fixes
 EOF
 }
 

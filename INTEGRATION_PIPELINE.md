@@ -126,6 +126,7 @@ main (upstream mirror)
         +-- feature/codex
         +-- feature/claude-code
         +-- feature/virtual-llm-routing
+        +-- integration/fixes (post-feature compatibility fixes)
         |
-        +-- integration/merged (all features merged together)
+        +-- integration/merged (all inputs merged in the listed order)
 ```
