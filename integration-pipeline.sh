@@ -110,6 +110,11 @@ write_report() {
     local failed_stage="${1:-}"
     local log_file="${2:-}"
     local error_summary="${3:-}"
+    local fix_command="./integration-pipeline.sh --skip-merge --stage $failed_stage"
+
+    if [[ "$failed_stage" == "merge" ]]; then
+        fix_command="./integration-pipeline.sh -- --continue"
+    fi
 
     # Extract failing files from log if possible
     local failing_files="[]"
@@ -132,7 +137,7 @@ write_report() {
   "error_summary": $(echo "$error_summary" | json_string),
   "failing_files": $failing_files,
   "log_file": "$log_file",
-  "fix_hint": "Read the log file for full error output. Fix the failing files, commit, then re-run: ./integration-pipeline.sh --skip-merge --stage $failed_stage"
+  "fix_hint": "Read the log file for full error output. Fix the failing files, stage them, then re-run: $fix_command"
 }
 ENDJSON
     echo ""
@@ -140,7 +145,7 @@ ENDJSON
     echo "PIPELINE FAILED at stage: $failed_stage"
     echo "Report written to: $REPORT_FILE"
     echo "Full log: $log_file"
-    echo "Re-run after fixing: ./integration-pipeline.sh --skip-merge --stage $failed_stage"
+    echo "Re-run after fixing: $fix_command"
     echo "================================================================"
 }
 

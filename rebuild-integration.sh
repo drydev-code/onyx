@@ -10,6 +10,7 @@ BASE_BRANCH="integration/base"
 MERGED_BRANCH="integration/merged"
 SYNC_MAIN=true
 ALLOW_DIRTY=false
+CONTINUE_REBUILD=false
 DEFAULT_FEATURE_BRANCHES=(
     "feature/reasoning-effort"
     "feature/glm"
@@ -37,18 +38,21 @@ Options:
   --merged <branch>      Assembled branch to recreate (default: integration/merged)
   --no-sync-main         Skip fetching/resetting main from the remote
   --allow-dirty          Allow running with local uncommitted changes
+  --continue             Resume after resolving merge conflicts
   -h, --help             Show this help text
 
 Examples:
   ./rebuild-integration.sh
   ./rebuild-integration.sh feature/glm feature/codex
   ./rebuild-integration.sh --no-sync-main feature/imagerouter
+  ./rebuild-integration.sh --continue
 
 Behavior:
   - Syncs main from the remote unless --no-sync-main is set
   - Deletes and recreates integration/merged from main
   - Merges integration/base first
   - Merges either the provided feature branches or the default fork feature order
+  - Stops on unresolved conflicts and supports resuming with --continue
 
 Default feature merge order:
   1. feature/reasoning-effort
@@ -123,22 +127,83 @@ collect_feature_branches() {
     FEATURE_BRANCHES=("${DEFAULT_FEATURE_BRANCHES[@]}")
 }
 
-rebuild_merged_branch() {
-    echo "==> Recreating $MERGED_BRANCH from $MAIN_BRANCH"
-    git checkout "$MAIN_BRANCH"
+merge_branch() {
+    local branch_name="$1"
+    local unmerged_paths
 
-    if git show-ref --verify --quiet "refs/heads/$MERGED_BRANCH"; then
-        git branch -D "$MERGED_BRANCH"
+    if git merge-base --is-ancestor "$branch_name" HEAD; then
+        echo "==> Already merged: $branch_name"
+        return
     fi
 
-    git checkout -b "$MERGED_BRANCH" "$MAIN_BRANCH"
+    echo "==> Merging $branch_name"
+    if git merge --no-ff --no-edit "$branch_name"; then
+        return
+    fi
 
-    echo "==> Merging $BASE_BRANCH"
-    git merge --no-ff --no-edit "$BASE_BRANCH"
+    unmerged_paths="$(git diff --name-only --diff-filter=U)"
+    if [[ -n "$unmerged_paths" ]]; then
+        echo "Error: resolve these merge conflicts:" >&2
+        printf '%s\n' "$unmerged_paths" >&2
+        echo "Then stage the resolutions and run: ./rebuild-integration.sh --continue" >&2
+        return 1
+    fi
+
+    if [[ -f "$(git rev-parse --git-path MERGE_HEAD)" ]]; then
+        echo "==> All conflicts resolved by rerere; committing $branch_name"
+        git commit --no-edit
+        return
+    fi
+
+    echo "Error: merge failed without an active merge state: $branch_name" >&2
+    return 1
+}
+
+finish_pending_merge() {
+    local unmerged_paths
+
+    if [[ ! -f "$(git rev-parse --git-path MERGE_HEAD)" ]]; then
+        return
+    fi
+
+    unmerged_paths="$(git diff --name-only --diff-filter=U)"
+    if [[ -n "$unmerged_paths" ]]; then
+        echo "Error: conflicts remain unresolved:" >&2
+        printf '%s\n' "$unmerged_paths" >&2
+        return 1
+    fi
+
+    echo "==> Committing resolved merge"
+    git commit --no-edit
+}
+
+rebuild_merged_branch() {
+    if [[ "$CONTINUE_REBUILD" == true ]]; then
+        if [[ "$(git branch --show-current)" != "$MERGED_BRANCH" ]]; then
+            echo "Error: --continue requires the current branch to be $MERGED_BRANCH." >&2
+            exit 1
+        fi
+
+        finish_pending_merge
+        if [[ -n "$(git status --short --untracked-files=no)" ]]; then
+            echo "Error: tracked changes remain after the resolved merge." >&2
+            exit 1
+        fi
+    else
+        echo "==> Recreating $MERGED_BRANCH from $MAIN_BRANCH"
+        git checkout "$MAIN_BRANCH"
+
+        if git show-ref --verify --quiet "refs/heads/$MERGED_BRANCH"; then
+            git branch -D "$MERGED_BRANCH"
+        fi
+
+        git checkout -b "$MERGED_BRANCH" "$MAIN_BRANCH"
+    fi
+
+    merge_branch "$BASE_BRANCH"
 
     for branch_name in "${FEATURE_BRANCHES[@]}"; do
-        echo "==> Merging $branch_name"
-        git merge --no-ff --no-edit "$branch_name"
+        merge_branch "$branch_name"
     done
 
     echo "==> Done"
@@ -174,6 +239,11 @@ while [[ $# -gt 0 ]]; do
             ALLOW_DIRTY=true
             shift
             ;;
+        --continue)
+            CONTINUE_REBUILD=true
+            SYNC_MAIN=false
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -198,7 +268,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 require_git_repo
-require_clean_worktree
 require_local_branch "$MAIN_BRANCH"
 require_local_branch "$BASE_BRANCH"
 collect_feature_branches "${POSITIONAL_ARGS[@]}"
@@ -207,7 +276,13 @@ for branch_name in "${FEATURE_BRANCHES[@]}"; do
     require_local_branch "$branch_name"
 done
 
-if [[ "$SYNC_MAIN" == true ]]; then
+if [[ "$CONTINUE_REBUILD" == false ]]; then
+    require_clean_worktree
+fi
+
+if [[ "$CONTINUE_REBUILD" == true ]]; then
+    echo "==> Continuing $MERGED_BRANCH"
+elif [[ "$SYNC_MAIN" == true ]]; then
     sync_main_branch
 else
     echo "==> Skipping sync of $MAIN_BRANCH"

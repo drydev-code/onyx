@@ -9,6 +9,9 @@
 # After fixing issues, re-run just the failing stage
 ./integration-pipeline.sh --skip-merge --stage build
 
+# After resolving and staging merge conflicts, resume the merge and pipeline
+./integration-pipeline.sh -- --continue
+
 # Everything except deploy (dry run)
 ./integration-pipeline.sh --no-deploy
 ```
@@ -44,6 +47,9 @@ On failure, the pipeline writes `integration-build-report.json`:
 3. Fix the `failing_files`
 4. Commit the fix
 5. Re-run using the `fix_hint` command
+
+For merge conflicts, stage each resolution but do not create the merge commit.
+The `--continue` workflow creates that commit and skips branches already merged.
 
 ## Common Fix Patterns
 
