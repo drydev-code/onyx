@@ -15,7 +15,8 @@ export type ImageProviderDescriptionKey =
   | "providers.gemini3ProImagePreview.description"
   | "providers.googleAiStudioGemini31FlashImage.description"
   | "providers.googleAiStudioGemini3ProImage.description"
-  | "providers.googleAiStudioGemini25FlashImage.description";
+  | "providers.googleAiStudioGemini25FlashImage.description"
+  | "providers.imageRouter.description";
 
 export interface ImageProvider {
   image_provider_id: string; // Static unique key for UI-DB mapping
@@ -137,6 +138,18 @@ export const IMAGE_PROVIDER_GROUPS: ProviderGroup[] = [
         title: "Gemini 2.5 Flash Image (Nano Banana)",
         descriptionKey:
           "providers.googleAiStudioGemini25FlashImage.description",
+      },
+    ],
+  },
+  {
+    name: "ImageRouter",
+    providers: [
+      {
+        image_provider_id: "imagerouter_custom",
+        model_name: "",
+        provider_name: "imagerouter",
+        title: "ImageRouter",
+        descriptionKey: "providers.imageRouter.description",
       },
     ],
   },

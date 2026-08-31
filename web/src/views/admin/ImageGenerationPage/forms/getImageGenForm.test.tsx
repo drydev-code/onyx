@@ -16,6 +16,10 @@ jest.mock("@/views/admin/ImageGenerationPage/forms/VertexImageGenForm", () => ({
   VertexImageGenForm: () => <div data-testid="VertexImageGenForm" />,
 }));
 
+jest.mock("@/views/admin/ImageGenerationPage/forms/ImageRouterForm", () => ({
+  ImageRouterForm: () => <div data-testid="ImageRouterForm" />,
+}));
+
 jest.mock(
   "@/views/admin/ImageGenerationPage/forms/GoogleAIStudioImageGenForm",
   () => ({
@@ -47,6 +51,12 @@ function makeProps(providerName: string): ImageGenFormBaseProps {
 }
 
 describe("getImageGenForm", () => {
+  test("routes imagerouter to ImageRouterForm", () => {
+    const element = getImageGenForm(makeProps("imagerouter"));
+    render(<>{element}</>);
+    expect(screen.getByTestId("ImageRouterForm")).toBeInTheDocument();
+  });
+
   test("routes google_ai_studio to GoogleAIStudioImageGenForm", () => {
     const element = getImageGenForm(makeProps("google_ai_studio"));
     render(<>{element}</>);

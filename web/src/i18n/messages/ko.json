@@ -3514,6 +3514,12 @@
         "loading": {
           "placeholder": "불러오는 중..."
         },
+        "modelName": {
+          "idle": "ImageRouter에서 지원하는 모델 이름을 입력하세요.",
+          "label": "모델 이름",
+          "placeholder": "지원되는 모델 이름 입력",
+          "required": "모델 이름은 필수입니다"
+        },
         "location": {
           "idle": "Vertex AI 모델을 사용할 Google Cloud 리전입니다. 사용 가능한 리전은 <link>Google 문서</link>를 참고하세요.",
           "label": "위치",
@@ -3572,6 +3578,9 @@
         },
         "googleAiStudioGemini3ProImage": {
           "description": "Google AI Studio의 Nano Banana Pro는 향상된 텍스트 렌더링으로 전문적인 에셋 제작을 위해 설계되었습니다."
+        },
+        "imageRouter": {
+          "description": "하나의 API 키로 ImageRouter의 이미지 생성 모델에 액세스하고 API에서 지원하는 모델을 지정할 수 있습니다."
         },
         "openaiGptImage1": {
           "description": "프롬프트 준수도가 높은 OpenAI의 강력한 이미지 생성 모델입니다."

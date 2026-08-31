@@ -3514,6 +3514,12 @@
         "loading": {
           "placeholder": "Carregando..."
         },
+        "modelName": {
+          "idle": "Insira qualquer nome de modelo compatível com o ImageRouter.",
+          "label": "Nome do modelo",
+          "placeholder": "Insira um nome de modelo compatível",
+          "required": "O nome do modelo é obrigatório"
+        },
         "location": {
           "idle": "A região do Google Cloud dos seus modelos Vertex AI. Consulte a <link>documentação do Google</link> para ver as regiões disponíveis.",
           "label": "Localização",
@@ -3572,6 +3578,9 @@
         },
         "googleAiStudioGemini3ProImage": {
           "description": "O Nano Banana Pro via Google AI Studio foi projetado para a produção profissional de ativos com melhor renderização de texto."
+        },
+        "imageRouter": {
+          "description": "Acesse os modelos de geração de imagens do ImageRouter com uma chave de API e especifique qualquer modelo compatível com sua API."
         },
         "openaiGptImage1": {
           "description": "Um modelo de geração de imagens competente da OpenAI, com forte aderência ao prompt."

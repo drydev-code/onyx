@@ -3514,6 +3514,12 @@
         "loading": {
           "placeholder": "正在加载..."
         },
+        "modelName": {
+          "idle": "请输入 ImageRouter 支持的任意模型名称。",
+          "label": "模型名称",
+          "placeholder": "输入支持的模型名称",
+          "required": "模型名称为必填项"
+        },
         "location": {
           "idle": "用于 Vertex AI 模型的 Google Cloud 区域。可用区域请参见 <link>Google 文档</link>。",
           "label": "位置",
@@ -3572,6 +3578,9 @@
         },
         "googleAiStudioGemini3ProImage": {
           "description": "通过 Google AI Studio 使用的 Nano Banana Pro 专为专业素材制作而设计，并改进了文字渲染。"
+        },
+        "imageRouter": {
+          "description": "使用一个 API 密钥访问 ImageRouter 的图像生成模型，并指定其 API 支持的任意模型。"
         },
         "openaiGptImage1": {
           "description": "来自 OpenAI 的高性能图像生成模型，对提示词的遵循度很高。"
