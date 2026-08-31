@@ -9,6 +9,7 @@ from onyx.db.models import LLMProvider as LLMProviderModel
 from onyx.error_handling.error_codes import OnyxErrorCode
 from onyx.error_handling.exceptions import OnyxError
 from onyx.llm.constants import VIRTUAL_LLM_PROVIDER_NAME, LlmProviderNames
+from onyx.llm.models import ReasoningEffort, reasoning_effort_exceeds
 from onyx.llm.well_known_providers.llm_provider_options import (
     get_provider_display_name,
 )
@@ -18,6 +19,7 @@ from onyx.server.manage.llm.models import (
     ModelConfigurationView,
     VirtualModelProfileRequest,
     VirtualModelProfileView,
+    ensure_default_within_max,
 )
 
 _PROFILE_LOAD_OPTIONS = (
@@ -102,6 +104,15 @@ def fetch_virtual_model_configuration_ids(db_session: Session) -> set[int]:
 def fetch_virtual_model_target_by_provider_and_name(
     db_session: Session, provider_id: int, model_name: str
 ) -> ModelConfiguration | None:
+    profile = fetch_virtual_model_profile_by_provider_and_name(
+        db_session, provider_id, model_name
+    )
+    return profile.target_model_configuration if profile else None
+
+
+def fetch_virtual_model_profile_by_provider_and_name(
+    db_session: Session, provider_id: int, model_name: str
+) -> VirtualLLMModel | None:
     profile_id = db_session.scalar(
         select(VirtualLLMModel.model_configuration_id)
         .join(
@@ -114,7 +125,7 @@ def fetch_virtual_model_target_by_provider_and_name(
         )
     )
     return (
-        fetch_virtual_model_target(db_session, profile_id)
+        fetch_virtual_model_profile(db_session, profile_id)
         if profile_id is not None
         else None
     )
@@ -224,10 +235,114 @@ def _validate_unique_name(
         )
 
 
+def _lower_reasoning_cap(
+    profile_cap: ReasoningEffort | None,
+    target_cap: ReasoningEffort | None,
+) -> ReasoningEffort | None:
+    if profile_cap is None:
+        return target_cap
+    if target_cap is None:
+        return profile_cap
+    return (
+        target_cap if reasoning_effort_exceeds(profile_cap, target_cap) else profile_cap
+    )
+
+
+def _effective_profile_settings(
+    profile_model: ModelConfiguration,
+    target_view: ModelConfigurationView,
+) -> dict[str, object]:
+    profile_max_tokens = profile_model.max_input_tokens
+    target_max_tokens = target_view.max_input_tokens
+    if profile_max_tokens is None:
+        max_input_tokens = target_max_tokens
+    elif target_max_tokens is None:
+        max_input_tokens = profile_max_tokens
+    else:
+        max_input_tokens = min(profile_max_tokens, target_max_tokens)
+
+    reasoning_effort_max = _lower_reasoning_cap(
+        profile_model.reasoning_effort_max,
+        target_view.reasoning_effort_max,
+    )
+    reasoning_effort_default = (
+        profile_model.reasoning_effort_default
+        if profile_model.reasoning_effort_default is not None
+        else target_view.reasoning_effort_default
+    )
+    if (
+        reasoning_effort_default is not None
+        and reasoning_effort_max is not None
+        and reasoning_effort_exceeds(reasoning_effort_default, reasoning_effort_max)
+    ):
+        reasoning_effort_default = reasoning_effort_max
+
+    return {
+        "max_input_tokens": max_input_tokens,
+        "configured_max_input_tokens": (
+            max_input_tokens
+            if profile_max_tokens is not None
+            else target_view.configured_max_input_tokens
+        ),
+        "reasoning_effort_max": reasoning_effort_max,
+        "reasoning_effort_default": reasoning_effort_default,
+        "temperature_default": (
+            profile_model.temperature_default
+            if profile_model.temperature_default is not None
+            else target_view.temperature_default
+        ),
+    }
+
+
+def _validate_profile_settings(
+    request: VirtualModelProfileRequest,
+    target: ModelConfiguration,
+) -> None:
+    target_view = ModelConfigurationView.from_model(
+        target,
+        target.llm_provider.provider,
+        use_stored_display_name=target.llm_provider.custom_config is not None,
+        custom_config=target.llm_provider.custom_config,
+        deployment_name=target.llm_provider.deployment_name,
+    )
+    if (
+        request.max_input_tokens is not None
+        and target_view.max_input_tokens is not None
+        and request.max_input_tokens > target_view.max_input_tokens
+    ):
+        raise OnyxError(
+            OnyxErrorCode.BAD_REQUEST,
+            "A profile context window cannot exceed its target model",
+        )
+
+    supported_efforts = set(target_view.supported_reasoning_efforts)
+    for effort in (
+        request.reasoning_effort_max,
+        request.reasoning_effort_default,
+    ):
+        if effort is not None and effort not in supported_efforts:
+            raise OnyxError(
+                OnyxErrorCode.BAD_REQUEST,
+                f"The target model does not support reasoning effort '{effort.value}'",
+            )
+
+    effective_max = _lower_reasoning_cap(
+        request.reasoning_effort_max,
+        target_view.reasoning_effort_max,
+    )
+    effective_default = (
+        request.reasoning_effort_default
+        if request.reasoning_effort_default is not None
+        else target_view.reasoning_effort_default
+    )
+    ensure_default_within_max(effective_default, effective_max)
+
+
 def create_virtual_model_profile(
     db_session: Session, request: VirtualModelProfileRequest
 ) -> VirtualLLMModel:
     target = _validate_target(db_session, request.target_model_configuration_id)
+    _validate_profile_settings(request, target)
     _validate_unique_name(db_session, request.name)
     provider = _fetch_or_create_virtual_provider(db_session)
 
@@ -235,8 +350,11 @@ def create_virtual_model_profile(
         llm_provider_id=provider.id,
         name=f"profile-{uuid4().hex}",
         is_visible=True,
-        max_input_tokens=None,
+        max_input_tokens=request.max_input_tokens,
         display_name=request.name,
+        reasoning_effort_max=request.reasoning_effort_max,
+        reasoning_effort_default=request.reasoning_effort_default,
+        temperature_default=request.temperature_default,
     )
     db_session.add(model_configuration)
     db_session.flush()
@@ -269,9 +387,16 @@ def update_virtual_model_profile(
     if profile is None:
         raise OnyxError(OnyxErrorCode.NOT_FOUND, "Model profile was not found")
     target = _validate_target(db_session, request.target_model_configuration_id)
+    _validate_profile_settings(request, target)
     _validate_unique_name(db_session, request.name, model_configuration_id)
 
     profile.model_configuration.display_name = request.name
+    profile.model_configuration.max_input_tokens = request.max_input_tokens
+    profile.model_configuration.reasoning_effort_max = request.reasoning_effort_max
+    profile.model_configuration.reasoning_effort_default = (
+        request.reasoning_effort_default
+    )
+    profile.model_configuration.temperature_default = request.temperature_default
     profile.target_model_configuration_id = target.id
     db_session.commit()
     updated = fetch_virtual_model_profile(db_session, model_configuration_id)
@@ -319,7 +444,9 @@ def fetch_profiles_targeting_models(
     )
 
 
-def _virtual_model_view(profile: VirtualLLMModel) -> ModelConfigurationView:
+def virtual_model_configuration_to_view(
+    profile: VirtualLLMModel,
+) -> ModelConfigurationView:
     target = profile.target_model_configuration
     target_view = ModelConfigurationView.from_model(
         target,
@@ -327,6 +454,9 @@ def _virtual_model_view(profile: VirtualLLMModel) -> ModelConfigurationView:
         use_stored_display_name=target.llm_provider.custom_config is not None,
         custom_config=target.llm_provider.custom_config,
         deployment_name=target.llm_provider.deployment_name,
+    )
+    effective_settings = _effective_profile_settings(
+        profile.model_configuration, target_view
     )
     return target_view.model_copy(
         update={
@@ -340,6 +470,7 @@ def _virtual_model_view(profile: VirtualLLMModel) -> ModelConfigurationView:
             "version": None,
             "region": None,
             "is_recommended_default": False,
+            **effective_settings,
         }
     )
 
@@ -356,7 +487,9 @@ def fetch_virtual_provider_descriptor(
         name=provider.name,
         provider=provider.provider,
         provider_display_name=VIRTUAL_LLM_PROVIDER_NAME,
-        model_configurations=[_virtual_model_view(profile) for profile in profiles],
+        model_configurations=[
+            virtual_model_configuration_to_view(profile) for profile in profiles
+        ],
     )
 
 
@@ -411,4 +544,8 @@ def virtual_model_profile_to_view(
         target_provider_id=target_provider.id,
         target_provider_name=provider_display_name,
         target_provider_type=target_provider.provider,
+        max_input_tokens=profile.model_configuration.max_input_tokens,
+        reasoning_effort_max=profile.model_configuration.reasoning_effort_max,
+        reasoning_effort_default=(profile.model_configuration.reasoning_effort_default),
+        temperature_default=profile.model_configuration.temperature_default,
     )

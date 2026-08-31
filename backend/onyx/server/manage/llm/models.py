@@ -634,6 +634,10 @@ class DefaultModel(BaseModel):
 class VirtualModelProfileRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     target_model_configuration_id: int
+    max_input_tokens: int | None = Field(default=None, gt=0)
+    reasoning_effort_max: ReasoningEffort | None = None
+    reasoning_effort_default: ReasoningEffort | None = None
+    temperature_default: float | None = None
 
     @field_validator("name")
     @classmethod
@@ -642,6 +646,35 @@ class VirtualModelProfileRequest(BaseModel):
         if not normalized:
             raise ValueError("Profile name cannot be empty")
         return normalized
+
+    @field_validator("reasoning_effort_max", "reasoning_effort_default", mode="before")
+    @classmethod
+    def validate_reasoning_effort(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        try:
+            return parse_user_selectable_reasoning_effort(
+                value.value if isinstance(value, ReasoningEffort) else value
+            )
+        except ValueError as e:
+            raise OnyxError(OnyxErrorCode.BAD_REQUEST, str(e))
+
+    @field_validator("temperature_default")
+    @classmethod
+    def validate_temperature(cls, value: float | None) -> float | None:
+        if value is not None and not 0 <= value <= 2:
+            raise OnyxError(
+                OnyxErrorCode.BAD_REQUEST,
+                f"temperature_default must be between 0 and 2, got {value}",
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_default_within_max(self) -> "VirtualModelProfileRequest":
+        ensure_default_within_max(
+            self.reasoning_effort_default, self.reasoning_effort_max
+        )
+        return self
 
 
 class VirtualModelProfileView(BaseModel):
@@ -655,6 +688,10 @@ class VirtualModelProfileView(BaseModel):
     target_provider_id: int
     target_provider_name: str
     target_provider_type: str
+    max_input_tokens: int | None = None
+    reasoning_effort_max: ReasoningEffort | None = None
+    reasoning_effort_default: ReasoningEffort | None = None
+    temperature_default: float | None = None
 
 
 class VirtualModelProfilesResponse(BaseModel):

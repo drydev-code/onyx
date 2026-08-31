@@ -172,6 +172,10 @@ export interface VirtualModelProfile {
   target_provider_id: number;
   target_provider_name: string;
   target_provider_type: string;
+  max_input_tokens: number | null;
+  reasoning_effort_max: ReasoningEffortOverride | null;
+  reasoning_effort_default: ReasoningEffortOverride | null;
+  temperature_default: number | null;
 }
 
 export interface VirtualModelProfilesResponse {
@@ -183,6 +187,10 @@ export interface VirtualModelProfilesResponse {
 export interface VirtualModelProfileRequest {
   name: string;
   target_model_configuration_id: number;
+  max_input_tokens: number | null;
+  reasoning_effort_max: ReasoningEffortOverride | null;
+  reasoning_effort_default: ReasoningEffortOverride | null;
+  temperature_default: number | null;
 }
 
 export type LLMModalVariant = "onboarding" | "llm-configuration";
