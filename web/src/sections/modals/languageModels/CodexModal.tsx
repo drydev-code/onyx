@@ -60,6 +60,13 @@ type OAuthState =
   | { status: "authorized" }
   | { status: "error"; message: string };
 
+function hasCodexAuthentication(values: unknown): boolean {
+  if (typeof values !== "object" || values === null) return false;
+  return Boolean(
+    Reflect.get(values, "api_key") || Reflect.get(values, "codex_access_token")
+  );
+}
+
 function OAuthSection() {
   const t = useTranslations("admin.languageModels.modals.codex");
   const { setFieldValue } = useFormikContext<CodexFormValues>();
@@ -181,8 +188,8 @@ function OAuthSection() {
 
   return (
     <div className="flex flex-col gap-3 px-4">
-      <Text mainUiAction>{t("authentication.title")}</Text>
-      <Text secondaryBody text03>
+      <Text font="main-ui-action">{t("authentication.title")}</Text>
+      <Text font="secondary-body" color="text-03">
         {t("authentication.description")}
       </Text>
 
@@ -194,7 +201,7 @@ function OAuthSection() {
 
       {oauthState.status === "pending" && (
         <div className="flex flex-col gap-2 rounded-08 bg-background-tint-02 p-4">
-          <Text secondaryBody>{t("pending.instructions")}</Text>
+          <Text font="secondary-body">{t("pending.instructions")}</Text>
           <a
             href={oauthState.verificationUri}
             target="_blank"
@@ -203,11 +210,11 @@ function OAuthSection() {
           >
             {oauthState.verificationUri}
           </a>
-          <Text secondaryBody>{t("pending.codePrompt")}</Text>
+          <Text font="secondary-body">{t("pending.codePrompt")}</Text>
           <Text font="heading-h2" color="text-04">
             {oauthState.userCode}
           </Text>
-          <Text secondaryBody text03>
+          <Text font="secondary-body" color="text-03">
             {t("pending.waiting")}
           </Text>
         </div>
@@ -215,13 +222,13 @@ function OAuthSection() {
 
       {oauthState.status === "authorized" && (
         <div className="rounded-08 bg-status-success-01 p-3">
-          <Text secondaryBody>{t("authorized.message")}</Text>
+          <Text font="secondary-body">{t("authorized.message")}</Text>
         </div>
       )}
 
       {oauthState.status === "error" && (
         <div className="flex flex-col gap-2 rounded-08 bg-status-error-01 p-3">
-          <Text secondaryBody>{oauthState.message}</Text>
+          <Text font="secondary-body">{oauthState.message}</Text>
           <Button
             prominence="tertiary"
             size="sm"
@@ -269,7 +276,7 @@ export default function CodexModal({
   const validationSchema = buildValidationSchema(t, isOnboarding).test(
     "codex-auth",
     t("codex.validation.authenticationRequired"),
-    (values) => Boolean(values?.api_key || values?.codex_access_token)
+    hasCodexAuthentication
   );
 
   return (
@@ -280,7 +287,7 @@ export default function CodexModal({
       initialValues={initialValues}
       validationSchema={validationSchema}
       onSubmit={async (values, { setSubmitting, setStatus }) => {
-        const customConfig: Record<string, string> = {
+        const customConfig = {
           ...existingLlmProvider?.custom_config,
         };
         const tokenValues = {

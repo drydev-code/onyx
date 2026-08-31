@@ -20,7 +20,6 @@ from onyx.llm.well_known_providers.llm_provider_options import (
     get_zai_model_names,
 )
 
-
 # ---------------------------------------------------------------------------
 # factory.get_llm() routing tests
 # ---------------------------------------------------------------------------
@@ -177,19 +176,27 @@ def test_get_zai_model_names_returns_expected_models() -> None:
     assert models == ["glm-5.1", "glm-5-turbo", "glm-5v-turbo"]
 
 
-def test_get_claude_code_cli_model_names_returns_three_models() -> None:
-    """get_claude_code_cli_model_names should return exactly 3 claude models."""
+def test_get_claude_code_cli_model_names_are_all_claude_models() -> None:
+    """get_claude_code_cli_model_names should only return claude models."""
     models = get_claude_code_cli_model_names()
-    assert len(models) == 3
-    assert all("claude" in m for m in models)
+    assert models
+    assert all(m.startswith("claude-") for m in models)
+    assert len(set(models)) == len(models)
 
 
 def test_get_claude_code_cli_model_names_contains_expected_models() -> None:
     """get_claude_code_cli_model_names should contain the expected model names."""
     models = get_claude_code_cli_model_names()
+    assert "claude-opus-4-8" in models
+    assert "claude-sonnet-5" in models
     assert "claude-opus-4-6" in models
     assert "claude-sonnet-4-6" in models
     assert "claude-haiku-4-5" in models
+
+
+def test_get_claude_code_cli_default_is_newest_model() -> None:
+    """The first entry is what the UI offers as the default; keep it newest."""
+    assert get_claude_code_cli_model_names()[0] == "claude-opus-4-8"
 
 
 def test_get_openai_codex_model_names_returns_six_models() -> None:

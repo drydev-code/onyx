@@ -2439,39 +2439,6 @@ def poll_codex_device_auth(
         ) from error
 
 
-class ClaudeCLISetupTokenRequest(BaseModel):
-    oauth_token: str
-    cli_path: str = "claude"
-
-
-class ClaudeCLISetupTokenResponse(BaseModel):
-    status: str  # "ok" or "error"
-    error: str | None = None
-    cli_version: str | None = None
-
-
-@admin_router.post("/claude-cli/setup-token")
-def setup_claude_cli_token(
-    request: ClaudeCLISetupTokenRequest,
-    _: User = Depends(require_permission(Permission.MANAGE_LLMS)),
-) -> ClaudeCLISetupTokenResponse:
-    """Validate and accept a Claude Code CLI OAuth token.
-
-    Runs a quick CLI command with the token set as CLAUDE_CODE_OAUTH_TOKEN
-    to verify the CLI is reachable and the token format is plausible.
-    """
-    from onyx.server.manage.llm.claude_cli_auth import validate_oauth_token
-
-    error = validate_oauth_token(
-        oauth_token=request.oauth_token,
-        cli_path=request.cli_path,
-    )
-    if error:
-        return ClaudeCLISetupTokenResponse(status="error", error=error)
-
-    return ClaudeCLISetupTokenResponse(status="ok")
-
-
 @admin_router.get("/cli-availability")
 def get_cli_availability_endpoint(
     _: User = Depends(require_permission(Permission.MANAGE_LLMS)),

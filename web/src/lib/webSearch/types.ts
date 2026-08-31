@@ -95,7 +95,7 @@ export interface ConfigFieldSpec {
   options?: ReadonlyArray<{
     value: string;
     label: string;
-    description?: string | RichStr;
+    description?: string;
   }>;
 }
 

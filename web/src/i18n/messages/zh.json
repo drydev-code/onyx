@@ -4370,6 +4370,27 @@
             "authenticationRequired": "请使用 ChatGPT 登录或提供 OpenAI API 密钥。"
           }
         },
+        "claudeCode": {
+          "cliPath": {
+            "title": "CLI 路径",
+            "description": "Claude Code CLI 可执行文件的路径。留空将使用服务器 PATH 中的 claude。",
+            "placeholder": "claude"
+          },
+          "authMode": {
+            "title": "身份验证方式",
+            "description": "选择 Claude Code 向 Anthropic 进行身份验证的方式。",
+            "apiKey": "API 密钥",
+            "oauth": "OAuth 令牌"
+          },
+          "oauthToken": {
+            "title": "OAuth 令牌",
+            "description": "在受信任的计算机上运行 claude setup-token，然后粘贴生成的令牌。",
+            "placeholder": "粘贴 OAuth 令牌"
+          },
+          "validation": {
+            "authenticationRequired": "请提供 Anthropic API 密钥或 Claude Code OAuth 令牌。"
+          }
+        },
         "liteLlmProxy": {
           "apiBaseField": {
             "description": "您的 LiteLLM Proxy 服务器的基础 URL。"

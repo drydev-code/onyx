@@ -4370,6 +4370,27 @@
             "authenticationRequired": "ChatGPT でサインインするか、OpenAI API キーを入力してください。"
           }
         },
+        "claudeCode": {
+          "cliPath": {
+            "title": "CLI パス",
+            "description": "Claude Code CLI バイナリへのパスです。空欄の場合はサーバーの PATH にある claude を使用します。",
+            "placeholder": "claude"
+          },
+          "authMode": {
+            "title": "認証方法",
+            "description": "Claude Code が Anthropic に認証する方法を選択します。",
+            "apiKey": "API キー",
+            "oauth": "OAuth トークン"
+          },
+          "oauthToken": {
+            "title": "OAuth トークン",
+            "description": "信頼できるマシンで claude setup-token を実行し、生成されたトークンを貼り付けてください。",
+            "placeholder": "OAuth トークンを貼り付け"
+          },
+          "validation": {
+            "authenticationRequired": "Anthropic API キーまたは Claude Code OAuth トークンを入力してください。"
+          }
+        },
         "liteLlmProxy": {
           "apiBaseField": {
             "description": "LiteLLM Proxy サーバーのベース URL です。"

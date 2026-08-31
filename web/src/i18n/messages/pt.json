@@ -4370,6 +4370,27 @@
             "authenticationRequired": "Entre com o ChatGPT ou informe uma chave de API da OpenAI."
           }
         },
+        "claudeCode": {
+          "cliPath": {
+            "title": "Caminho da CLI",
+            "description": "Caminho do executável da CLI do Claude Code. Deixe em branco para usar claude no PATH do servidor.",
+            "placeholder": "claude"
+          },
+          "authMode": {
+            "title": "Modo de autenticação",
+            "description": "Escolha como o Claude Code se autentica com a Anthropic.",
+            "apiKey": "Chave de API",
+            "oauth": "Token OAuth"
+          },
+          "oauthToken": {
+            "title": "Token OAuth",
+            "description": "Execute claude setup-token em uma máquina confiável e cole o token gerado.",
+            "placeholder": "Cole seu token OAuth"
+          },
+          "validation": {
+            "authenticationRequired": "Informe uma chave de API da Anthropic ou um token OAuth do Claude Code."
+          }
+        },
         "liteLlmProxy": {
           "apiBaseField": {
             "description": "A URL base do seu servidor LiteLLM Proxy."
