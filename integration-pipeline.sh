@@ -225,12 +225,12 @@ stage_backend() {
     # py_compile` per file, which took minutes and exhausted Git Bash's fork
     # table on Windows ("dofork: child died unexpectedly").
     echo "    Checking Python syntax..."
-    if [[ -x "$SCRIPT_DIR/.venv/Scripts/python.exe" ]]; then
+    if command -v uv >/dev/null 2>&1; then
+        BACKEND_PYTHON=(uv run --frozen --project "$SCRIPT_DIR" python)
+    elif [[ -x "$SCRIPT_DIR/.venv/Scripts/python.exe" ]]; then
         BACKEND_PYTHON=("$SCRIPT_DIR/.venv/Scripts/python.exe")
     elif [[ -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
         BACKEND_PYTHON=("$SCRIPT_DIR/.venv/bin/python")
-    elif command -v uv >/dev/null 2>&1; then
-        BACKEND_PYTHON=(uv run --frozen --project "$SCRIPT_DIR" python)
     else
         echo "    Repository Python environment not found. Run: uv sync --frozen"
         return 1
