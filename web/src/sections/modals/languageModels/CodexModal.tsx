@@ -62,9 +62,10 @@ type OAuthState =
 
 function hasCodexAuthentication(values: unknown): boolean {
   if (typeof values !== "object" || values === null) return false;
-  return Boolean(
-    Reflect.get(values, "api_key") || Reflect.get(values, "codex_access_token")
-  );
+  const apiKey = "api_key" in values ? values.api_key : undefined;
+  const accessToken =
+    "codex_access_token" in values ? values.codex_access_token : undefined;
+  return Boolean(apiKey || accessToken);
 }
 
 function OAuthSection() {

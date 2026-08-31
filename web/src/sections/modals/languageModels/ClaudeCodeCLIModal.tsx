@@ -33,10 +33,18 @@ const AUTH_MODE_OAUTH = "oauth";
 
 function hasClaudeCodeAuthentication(values: unknown): boolean {
   if (typeof values !== "object" || values === null) return false;
-  const authMode = Reflect.get(values, "custom_config_auth_mode");
+  const authMode =
+    "custom_config_auth_mode" in values
+      ? values.custom_config_auth_mode
+      : undefined;
+  const apiKey = "api_key" in values ? values.api_key : undefined;
+  const oauthToken =
+    "custom_config_oauth_token" in values
+      ? values.custom_config_oauth_token
+      : undefined;
   return authMode === AUTH_MODE_OAUTH
-    ? Boolean(Reflect.get(values, "custom_config_oauth_token"))
-    : Boolean(Reflect.get(values, "api_key"));
+    ? Boolean(oauthToken)
+    : Boolean(apiKey);
 }
 
 interface ClaudeCodeCLIFormValues extends BaseLLMFormValues {
