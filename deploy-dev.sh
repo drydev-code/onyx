@@ -47,6 +47,8 @@ DEPLOY_BRANCH="${DEPLOY_BRANCH:-integration/merged}"
 BACKEND_BASE_TAG="onyxdotapp/onyx-backend:craft-base"
 BACKEND_TAG="onyxdotapp/onyx-backend:craft-latest"
 WEB_TAG="onyxdotapp/onyx-web-server:craft-latest"
+SANDBOX_TAG="onyxdotapp/sandbox:craft-latest"
+CRAFT_COMPOSE_FILE="docker-compose.craft.yml"
 
 TARGET="${1:-both}"
 
@@ -77,6 +79,16 @@ sync_server_repo() {
     $SSH "cd $SERVER_REPO_DIR && git fetch --prune origin && git reset --hard origin/$DEPLOY_BRANCH && git log -1 --oneline"
 }
 
+stage_craft_deployment_remote() {
+    echo "==> Staging the Craft compose overlay and Docker resources..."
+    $SSH "cp $SERVER_REPO_DIR/deployment/docker_compose/$CRAFT_COMPOSE_FILE \
+        $DEPLOYMENT_DIR/$CRAFT_COMPOSE_FILE && \
+        (docker network inspect onyx_craft_sandbox >/dev/null 2>&1 || \
+            docker network create onyx_craft_sandbox >/dev/null) && \
+        (docker volume inspect sandbox_proxy_ca >/dev/null 2>&1 || \
+            docker volume create sandbox_proxy_ca >/dev/null)"
+}
+
 ensure_backend_base_remote() {
     # The immutable base image holds the slow Python deps install.  Built
     # once from the FULL Dockerfile, then reused as BASE_IMAGE for every
@@ -101,6 +113,19 @@ build_backend_remote() {
         -f Dockerfile.dev ."
 }
 
+build_sandbox_remote() {
+    echo "==> Building Craft sandbox on server..."
+    $SSH "cd $SERVER_REPO_DIR/backend/onyx/server/features/build/sandbox/image && \
+        docker build --network=host -t $SANDBOX_TAG -f Dockerfile ."
+}
+
+ensure_sandbox_remote() {
+    if $SSH "docker image inspect $SANDBOX_TAG >/dev/null 2>&1"; then
+        return
+    fi
+    build_sandbox_remote
+}
+
 build_web_remote() {
     echo "==> Building web on server (Dockerfile.dev)..."
     $SSH "cd $SERVER_REPO_DIR/web && docker build -t $WEB_TAG -f Dockerfile.dev ."
@@ -109,11 +134,14 @@ build_web_remote() {
 restart_services_remote() {
     local services="$1"
     echo "==> Restarting services: $services"
-    $SSH "cd $DEPLOYMENT_DIR && docker compose up -d --force-recreate $services && docker compose restart nginx"
+    $SSH "cd $DEPLOYMENT_DIR && \
+        docker compose -f docker-compose.yml -f $CRAFT_COMPOSE_FILE \
+            up -d --no-build --force-recreate $services && \
+        docker compose -f docker-compose.yml -f $CRAFT_COMPOSE_FILE restart nginx"
 
     echo "==> Waiting for health check..."
     sleep 30
-    $SSH "docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E 'api_server|web_server|background|nginx' || true"
+    $SSH "docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E 'api_server|web_server|background|sandbox-proxy|nginx' || true"
     echo "==> Deploy complete!"
 }
 
@@ -172,19 +200,24 @@ case "$TARGET" in
     backend)
         ensure_server_repo
         sync_server_repo
+        stage_craft_deployment_remote
         build_backend_remote
+        ensure_sandbox_remote
         restart_services_remote "api_server background"
         ;;
     web)
         ensure_server_repo
         sync_server_repo
+        stage_craft_deployment_remote
         build_web_remote
         restart_services_remote "web_server"
         ;;
     both)
         ensure_server_repo
         sync_server_repo
+        stage_craft_deployment_remote
         build_backend_remote
+        build_sandbox_remote
         build_web_remote
         restart_services_remote "api_server background web_server"
         ;;
