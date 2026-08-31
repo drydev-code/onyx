@@ -265,11 +265,17 @@ print(f'  Fork providers OK ({len(FORK_PROVIDERS)} present)')
 }
 
 stage_test() {
+    local -a JEST_ARGS=(--ci --passWithNoTests --forceExit --testTimeout=30000)
+
     # Jest's 5s default is too tight for the heavier modal suites on slower dev
-    # boxes (CustomModal's userEvent-driven tests take >10s on Windows), so they
-    # time out here while passing on upstream's Linux CI runners.
+    # boxes. Parallel workers can also starve UI tests on Windows and cause
+    # their first test to time out.
+    if [[ "${OS:-}" == "Windows_NT" ]]; then
+        JEST_ARGS+=(--runInBand)
+    fi
+
     echo "    Running Jest tests..."
-    (cd "$SCRIPT_DIR/web" && npx jest --ci --passWithNoTests --forceExit --testTimeout=30000 2>&1) || return $?
+    (cd "$SCRIPT_DIR/web" && npx jest "${JEST_ARGS[@]}" 2>&1) || return $?
 }
 
 stage_deploy() {
