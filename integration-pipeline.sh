@@ -225,12 +225,12 @@ stage_backend() {
     # py_compile` per file, which took minutes and exhausted Git Bash's fork
     # table on Windows ("dofork: child died unexpectedly").
     echo "    Checking Python syntax..."
-    if command -v uv >/dev/null 2>&1; then
-        BACKEND_PYTHON=(uv run --frozen --project "$SCRIPT_DIR" python)
-    elif [[ -x "$SCRIPT_DIR/.venv/Scripts/python.exe" ]]; then
+    if [[ -x "$SCRIPT_DIR/.venv/Scripts/python.exe" ]]; then
         BACKEND_PYTHON=("$SCRIPT_DIR/.venv/Scripts/python.exe")
     elif [[ -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
         BACKEND_PYTHON=("$SCRIPT_DIR/.venv/bin/python")
+    elif command -v uv >/dev/null 2>&1; then
+        BACKEND_PYTHON=(uv run --frozen --project "$SCRIPT_DIR" python)
     else
         echo "    Repository Python environment not found. Run: uv sync --frozen"
         return 1
@@ -247,10 +247,8 @@ stage_backend() {
     echo "    Checking provider module imports..."
     (cd "$SCRIPT_DIR/backend" && "${BACKEND_PYTHON[@]}" -c "
 from onyx.llm.constants import LlmProviderNames, WELL_KNOWN_PROVIDER_NAMES
-from onyx.llm.well_known_providers.constants import *
-from onyx.llm.well_known_providers.llm_provider_options import (
-    fetch_available_well_known_llms,
-)
+from onyx.image_gen.providers import google_ai_studio_img_gen, imagerouter_img_gen
+from onyx.llm import claude_code_cli, codex_cli
 
 FORK_PROVIDERS = {
     LlmProviderNames.ZAI,
@@ -258,8 +256,7 @@ FORK_PROVIDERS = {
     LlmProviderNames.OPENAI_CODEX,
     LlmProviderNames.CLAUDE_CODE_CLI,
 }
-registered = {d.name for d in fetch_available_well_known_llms()}
-missing = sorted(p.value for p in FORK_PROVIDERS if p.value not in registered)
+missing = sorted(p.value for p in FORK_PROVIDERS if p not in WELL_KNOWN_PROVIDER_NAMES)
 if missing:
     raise SystemExit(f'  ERROR: fork providers missing from registry: {missing}')
 print(f'  Provider constants OK ({len(WELL_KNOWN_PROVIDER_NAMES)} providers)')
