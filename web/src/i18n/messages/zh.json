@@ -3564,6 +3564,15 @@
         "gemini3ProImagePreview": {
           "description": "Google Cloud 已于 2026 年 7 月 17 日停止提供。请切换到 Gemini 3 Pro Image。"
         },
+        "googleAiStudioGemini25FlashImage": {
+          "description": "通过 Google AI Studio 使用的 Gemini 2.5 Flash Image 专为快速高效的图像生成而设计。"
+        },
+        "googleAiStudioGemini31FlashImage": {
+          "description": "通过 Google AI Studio 使用的 Nano Banana 2 兼具 Nano Banana Pro 的质量与 Flash 的速度，最高支持 4K 分辨率。"
+        },
+        "googleAiStudioGemini3ProImage": {
+          "description": "通过 Google AI Studio 使用的 Nano Banana Pro 专为专业素材制作而设计，并改进了文字渲染。"
+        },
         "openaiGptImage1": {
           "description": "来自 OpenAI 的高性能图像生成模型，对提示词的遵循度很高。"
         },

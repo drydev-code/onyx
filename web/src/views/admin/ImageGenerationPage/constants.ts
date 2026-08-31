@@ -12,7 +12,10 @@ export type ImageProviderDescriptionKey =
   | "providers.azureGptImage1.description"
   | "providers.gemini25FlashImage.description"
   | "providers.gemini3ProImage.description"
-  | "providers.gemini3ProImagePreview.description";
+  | "providers.gemini3ProImagePreview.description"
+  | "providers.googleAiStudioGemini31FlashImage.description"
+  | "providers.googleAiStudioGemini3ProImage.description"
+  | "providers.googleAiStudioGemini25FlashImage.description";
 
 export interface ImageProvider {
   image_provider_id: string; // Static unique key for UI-DB mapping
@@ -106,6 +109,34 @@ export const IMAGE_PROVIDER_GROUPS: ProviderGroup[] = [
         title: "Gemini 3 Pro Image Preview",
         descriptionKey: "providers.gemini3ProImagePreview.description",
         deprecated: true,
+      },
+    ],
+  },
+  {
+    name: "Google AI Studio",
+    providers: [
+      {
+        image_provider_id: "aistudio_gemini_3_1_flash_image",
+        model_name: "gemini-3.1-flash-image-preview",
+        provider_name: "google_ai_studio",
+        title: "Gemini 3.1 Flash Image (Nano Banana 2)",
+        descriptionKey:
+          "providers.googleAiStudioGemini31FlashImage.description",
+      },
+      {
+        image_provider_id: "aistudio_gemini_3_pro_image",
+        model_name: "gemini-3-pro-image-preview",
+        provider_name: "google_ai_studio",
+        title: "Gemini 3 Pro Image Preview (Nano Banana Pro)",
+        descriptionKey: "providers.googleAiStudioGemini3ProImage.description",
+      },
+      {
+        image_provider_id: "aistudio_gemini_2_5_flash_image",
+        model_name: "gemini-2.5-flash-image",
+        provider_name: "google_ai_studio",
+        title: "Gemini 2.5 Flash Image (Nano Banana)",
+        descriptionKey:
+          "providers.googleAiStudioGemini25FlashImage.description",
       },
     ],
   },

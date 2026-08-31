@@ -3564,6 +3564,15 @@
         "gemini3ProImagePreview": {
           "description": "Google Cloud により 2026 年 7 月 17 日に提供終了となります。Gemini 3 Pro Image に切り替えてください。"
         },
+        "googleAiStudioGemini25FlashImage": {
+          "description": "Google AI Studio の Gemini 2.5 Flash Image は、高速で効率的な画像生成向けに設計されています。"
+        },
+        "googleAiStudioGemini31FlashImage": {
+          "description": "Google AI Studio の Nano Banana 2 は、Nano Banana Pro の品質と Flash の速度を兼ね備え、最大 4K の解像度に対応します。"
+        },
+        "googleAiStudioGemini3ProImage": {
+          "description": "Google AI Studio の Nano Banana Pro は、テキスト描画を改善したプロ向けのアセット制作を想定して設計されています。"
+        },
         "openaiGptImage1": {
           "description": "プロンプトへの忠実度が高い、OpenAI の高性能な画像生成モデルです。"
         },

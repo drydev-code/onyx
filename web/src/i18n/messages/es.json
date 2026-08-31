@@ -3564,6 +3564,15 @@
         "gemini3ProImagePreview": {
           "description": "Google Cloud lo retiró el 17 de julio de 2026. Cambia a Gemini 3 Pro Image."
         },
+        "googleAiStudioGemini25FlashImage": {
+          "description": "Gemini 2.5 Flash Image mediante Google AI Studio está diseñado para generar imágenes de forma rápida y eficiente."
+        },
+        "googleAiStudioGemini31FlashImage": {
+          "description": "Nano Banana 2 mediante Google AI Studio combina la calidad de Nano Banana Pro con la velocidad de Flash y una resolución de hasta 4K."
+        },
+        "googleAiStudioGemini3ProImage": {
+          "description": "Nano Banana Pro mediante Google AI Studio está diseñado para producir recursos profesionales con una representación de texto mejorada."
+        },
         "openaiGptImage1": {
           "description": "Un potente modelo de generación de imágenes de OpenAI que sigue muy bien el prompt."
         },
