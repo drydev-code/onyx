@@ -4165,6 +4165,43 @@
           "title": "Self-hosted & Custom"
         }
       },
+      "virtualProfiles": {
+        "addButton": "Add profile",
+        "defaultTag": "Default",
+        "deleteAria": "Delete {name}",
+        "deleteModal": {
+          "description": "Users will no longer be able to select this profile.",
+          "submit": "Delete",
+          "title": "Delete {name}"
+        },
+        "disabledDescription": "Users select provider models directly. Add profiles, then enable managed profiles.",
+        "editAria": "Edit {name}",
+        "emptyDescription": "Add a simple name and map it to a configured provider model.",
+        "enabledDescription": "All users see only these profile names. Onyx resolves each profile to its current target.",
+        "form": {
+          "createTitle": "Add model profile",
+          "editTitle": "Edit model profile",
+          "nameLabel": "Profile name",
+          "namePlaceholder": "Normal Agent",
+          "saveButton": "Save",
+          "targetLabel": "Routes to"
+        },
+        "listTitle": "Model profiles",
+        "routesTo": "Routes to {provider} · {model}",
+        "setDefaultButton": "Set default",
+        "title": "Managed model profiles",
+        "toasts": {
+          "defaultFailed": "Failed to update the default profile.",
+          "defaultUpdated": "Default profile updated.",
+          "deleteFailed": "Failed to delete the profile.",
+          "deleted": "Model profile deleted.",
+          "disabled": "Managed model profiles disabled.",
+          "enabled": "Managed model profiles enabled.",
+          "saveFailed": "Failed to save the profile.",
+          "saved": "Model profile saved.",
+          "toggleFailed": "Failed to change managed model profiles."
+        }
+      },
       "modals": {
         "access": {
           "admin": {

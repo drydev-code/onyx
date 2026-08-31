@@ -39,6 +39,10 @@ from onyx.db.user_usage import (
     reset_user_usage,
 )
 from onyx.db.users import get_user_by_email
+from onyx.db.virtual_llm import (
+    is_virtual_model_configuration,
+    resolve_virtual_model_target,
+)
 from onyx.error_handling.error_codes import OnyxErrorCode
 from onyx.error_handling.exceptions import OnyxError
 from onyx.llm.cost import ModelPrice, get_model_price_per_million
@@ -270,11 +274,15 @@ def get_my_usage(
                 available_model_prices.append(price)
     available_model_prices.sort(key=lambda p: (p.input_per_mtok or 0.0, p.model))
 
-    default_model = fetch_default_llm_model(db_session)
+    configured_default_model = fetch_default_llm_model(db_session)
+    default_model = resolve_virtual_model_target(db_session, configured_default_model)
     selected_model_price: ModelPrice | None = None
-    if (
-        default_model is not None
-        and default_model.id in accessible_model_configuration_ids
+    if default_model is not None and (
+        default_model.id in accessible_model_configuration_ids
+        or is_virtual_model_configuration(
+            db_session,
+            configured_default_model.id if configured_default_model else None,
+        )
     ):
         provider = default_model.llm_provider.provider
         price = get_model_price_per_million(default_model.name, provider, db_session)

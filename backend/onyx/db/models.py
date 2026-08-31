@@ -3726,6 +3726,29 @@ class ModelConfiguration(Base):
         return [flow.llm_model_flow_type for flow in self.llm_model_flows]
 
 
+class VirtualLLMModel(Base):
+    __tablename__ = "virtual_llm_model"
+
+    model_configuration_id: Mapped[int] = mapped_column(
+        ForeignKey("model_configuration.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    target_model_configuration_id: Mapped[int] = mapped_column(
+        ForeignKey("model_configuration.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+    model_configuration: Mapped["ModelConfiguration"] = relationship(
+        "ModelConfiguration",
+        foreign_keys=[model_configuration_id],
+    )
+    target_model_configuration: Mapped["ModelConfiguration"] = relationship(
+        "ModelConfiguration",
+        foreign_keys=[target_model_configuration_id],
+    )
+
+
 class LLMModelFlow(Base):
     __tablename__ = "llm_model_flow"
 

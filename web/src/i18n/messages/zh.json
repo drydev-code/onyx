@@ -4165,6 +4165,43 @@
           "title": "自托管和自定义"
         }
       },
+      "virtualProfiles": {
+        "addButton": "添加配置文件",
+        "defaultTag": "默认",
+        "deleteAria": "删除 {name}",
+        "deleteModal": {
+          "description": "用户将无法再选择此配置文件。",
+          "submit": "删除",
+          "title": "删除 {name}"
+        },
+        "disabledDescription": "用户直接选择提供商模型。请先添加配置文件，再启用托管配置文件。",
+        "editAria": "编辑 {name}",
+        "emptyDescription": "添加一个简单名称，并将其映射到已配置的提供商模型。",
+        "enabledDescription": "所有用户只能看到这些配置文件名称。Onyx 会将每个配置文件解析到当前目标。",
+        "form": {
+          "createTitle": "添加模型配置文件",
+          "editTitle": "编辑模型配置文件",
+          "nameLabel": "配置文件名称",
+          "namePlaceholder": "普通智能体",
+          "saveButton": "保存",
+          "targetLabel": "路由到"
+        },
+        "listTitle": "模型配置文件",
+        "routesTo": "路由到 {provider} · {model}",
+        "setDefaultButton": "设为默认",
+        "title": "托管模型配置文件",
+        "toasts": {
+          "defaultFailed": "无法更新默认配置文件。",
+          "defaultUpdated": "默认配置文件已更新。",
+          "deleteFailed": "无法删除配置文件。",
+          "deleted": "模型配置文件已删除。",
+          "disabled": "托管模型配置文件已禁用。",
+          "enabled": "托管模型配置文件已启用。",
+          "saveFailed": "无法保存配置文件。",
+          "saved": "模型配置文件已保存。",
+          "toggleFailed": "无法更改托管模型配置文件。"
+        }
+      },
       "modals": {
         "access": {
           "admin": {

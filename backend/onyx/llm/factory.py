@@ -19,6 +19,11 @@ from onyx.db.llm import (
 )
 from onyx.db.models import LLMProvider as LLMProviderModel
 from onyx.db.models import Persona, SearchSettings, User
+from onyx.db.virtual_llm import (
+    fetch_default_virtual_model,
+    fetch_virtual_model_target_by_provider_and_name,
+    is_virtual_model_configuration,
+)
 from onyx.llm.constants import LlmProviderNames
 from onyx.llm.interfaces import LLM, LlmRequestPolicy
 from onyx.llm.models import ReasoningEffort, UserChatDefaults
@@ -33,6 +38,7 @@ from onyx.llm.well_known_providers.constants import (
 )
 from onyx.natural_language_processing.utils import get_tokenizer
 from onyx.server.manage.llm.models import LLMProviderView, ModelConfigurationView
+from onyx.server.settings.store import load_settings
 from onyx.utils.headers import build_llm_extra_headers
 from onyx.utils.logger import setup_logger
 
@@ -190,6 +196,25 @@ def get_llm_for_persona(
         )
 
     with get_session_with_current_tenant() as db_session:
+        if load_settings().virtual_model_profiles_enabled:
+            selected_model_configuration_id = (
+                mc_id_override or persona.default_model_configuration_id
+            )
+            if (
+                provider_name_override and mc_id_override is None
+            ) or not is_virtual_model_configuration(
+                db_session, selected_model_configuration_id
+            ):
+                logger.info(
+                    "Managed model profiles ignored a direct physical model selection"
+                )
+                return get_default_llm(
+                    temperature=temperature_override,
+                    additional_headers=additional_headers,
+                    policy_fn=policy_fn,
+                    user_defaults=user_defaults,
+                )
+
         resolved = _resolve_provider_and_model(
             persona,
             provider_name_override,
@@ -354,6 +379,25 @@ def llm_from_provider(
     policy_fn: Callable[[str], LlmRequestPolicy] | None = None,
     user_defaults: UserChatDefaults | None = None,
 ) -> LLM:
+    if llm_provider.provider == LlmProviderNames.ONYX_VIRTUAL:
+        with get_session_with_current_tenant() as db_session:
+            target = fetch_virtual_model_target_by_provider_and_name(
+                db_session, llm_provider.id, model_name
+            )
+            if target is None:
+                raise ValueError(f"Model profile '{model_name}' was not found")
+            target_model_name = target.name
+            target_provider = LLMProviderView.from_model(target.llm_provider)
+        return llm_from_provider(
+            model_name=target_model_name,
+            llm_provider=target_provider,
+            timeout=timeout,
+            temperature=temperature,
+            additional_headers=additional_headers,
+            policy_fn=policy_fn,
+            user_defaults=user_defaults,
+        )
+
     model_configuration = _get_model_configuration(
         llm_provider=llm_provider, model_name=model_name
     )
@@ -445,7 +489,11 @@ def get_default_llm(
     user_defaults: UserChatDefaults | None = None,
 ) -> LLM:
     with get_session_with_current_tenant() as db_session:
-        model = fetch_default_llm_model(db_session)
+        model = (
+            fetch_default_virtual_model(db_session)
+            if load_settings().virtual_model_profiles_enabled
+            else fetch_default_llm_model(db_session)
+        )
 
         if not model:
             raise ValueError("No default LLM model found")

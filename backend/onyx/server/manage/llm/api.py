@@ -9,9 +9,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 from botocore.tokens import FrozenAuthToken, TokenProviderChain
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
-from pydantic import ValidationError
-
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from onyx.auth.permissions import has_global_permission, require_permission
@@ -40,6 +38,18 @@ from onyx.db.llm import (
 )
 from onyx.db.models import Persona, User
 from onyx.db.persona import user_can_access_persona
+from onyx.db.virtual_llm import (
+    create_virtual_model_profile,
+    delete_virtual_model_profile,
+    fetch_default_virtual_model,
+    fetch_virtual_model_configuration_ids,
+    fetch_virtual_model_profiles,
+    fetch_virtual_model_target,
+    fetch_virtual_provider_descriptor,
+    is_virtual_model_configuration,
+    update_virtual_model_profile,
+    virtual_model_profile_to_view,
+)
 from onyx.error_handling.error_codes import OnyxErrorCode
 from onyx.error_handling.exceptions import OnyxError
 from onyx.llm.api_surfaces import SURFACE_SELECTION_CONFIG_KEYS
@@ -110,6 +120,10 @@ from onyx.server.manage.llm.models import (
     PortkeyModelsRequest,
     SyncModelEntry,
     TestLLMRequest,
+    VirtualModelProfileRequest,
+    VirtualModelProfilesEnabledRequest,
+    VirtualModelProfilesResponse,
+    VirtualModelProfileView,
     VisionProviderResponse,
 )
 from onyx.server.manage.llm.provider_cache import (
@@ -127,6 +141,11 @@ from onyx.server.manage.llm.utils import (
     lm_studio_capability_enabled,
     strip_openrouter_vendor_prefix,
 )
+from onyx.server.settings.store import (
+    load_settings,
+    settings_write_lock,
+    store_settings,
+)
 from onyx.utils.audit import (
     AuditAction,
     AuditOutcome,
@@ -141,6 +160,25 @@ logger = setup_logger()
 
 admin_router = APIRouter(prefix="/admin/llm")
 basic_router = APIRouter(prefix="/llm")
+
+
+def _virtual_model_profiles_response(
+    db_session: Session,
+) -> VirtualModelProfilesResponse:
+    settings = load_settings()
+    default_model = (
+        fetch_default_virtual_model(db_session)
+        if settings.virtual_model_profiles_enabled
+        else None
+    )
+    return VirtualModelProfilesResponse(
+        enabled=settings.virtual_model_profiles_enabled,
+        default_model_configuration_id=default_model.id if default_model else None,
+        profiles=[
+            virtual_model_profile_to_view(profile)
+            for profile in fetch_virtual_model_profiles(db_session)
+        ],
+    )
 
 
 def _mask_string(value: str) -> str:
@@ -496,9 +534,8 @@ def test_llm_configuration(
             OPENAI_CODEX_ACCESS_TOKEN_KEY,
         )
 
-        has_oauth = (
-            test_custom_config
-            and test_custom_config.get(OPENAI_CODEX_ACCESS_TOKEN_KEY)
+        has_oauth = test_custom_config and test_custom_config.get(
+            OPENAI_CODEX_ACCESS_TOKEN_KEY
         )
         if has_oauth:
             return  # OAuth token accepted — validated during device auth flow
@@ -544,6 +581,144 @@ def test_default_provider(
     error = test_llm(llm)
     if error:
         raise OnyxError(OnyxErrorCode.VALIDATION_ERROR, str(error))
+
+
+@admin_router.get("/virtual-model-profiles")
+def get_virtual_model_profiles(
+    _: User = Depends(require_permission(Permission.MANAGE_LLMS)),
+    db_session: Session = Depends(get_session),
+) -> VirtualModelProfilesResponse:
+    return _virtual_model_profiles_response(db_session)
+
+
+@admin_router.post("/virtual-model-profiles")
+def post_virtual_model_profile(
+    request: VirtualModelProfileRequest,
+    user: User = Depends(require_permission(Permission.MANAGE_LLMS)),
+    db_session: Session = Depends(get_session),
+) -> VirtualModelProfileView:
+    with settings_write_lock():
+        profile = create_virtual_model_profile(db_session, request)
+    invalidate_provider_listing_cache()
+    emit_audit_event(
+        AuditAction.MODEL_PROFILE_CREATE,
+        AuditOutcome.SUCCESS,
+        actor=actor_from_user(user),
+        resource_type="model_profile",
+        resource_id=profile.model_configuration_id,
+        extra={
+            "name": profile.model_configuration.display_name,
+            "target_model_configuration_id": profile.target_model_configuration_id,
+        },
+    )
+    return virtual_model_profile_to_view(profile)
+
+
+@admin_router.put("/virtual-model-profiles/{model_configuration_id}")
+def put_virtual_model_profile(
+    model_configuration_id: int,
+    request: VirtualModelProfileRequest,
+    user: User = Depends(require_permission(Permission.MANAGE_LLMS)),
+    db_session: Session = Depends(get_session),
+) -> VirtualModelProfileView:
+    with settings_write_lock():
+        profile = update_virtual_model_profile(
+            db_session, model_configuration_id, request
+        )
+    invalidate_provider_listing_cache()
+    emit_audit_event(
+        AuditAction.MODEL_PROFILE_UPDATE,
+        AuditOutcome.SUCCESS,
+        actor=actor_from_user(user),
+        resource_type="model_profile",
+        resource_id=model_configuration_id,
+        extra={
+            "name": profile.model_configuration.display_name,
+            "target_model_configuration_id": profile.target_model_configuration_id,
+        },
+    )
+    return virtual_model_profile_to_view(profile)
+
+
+@admin_router.delete("/virtual-model-profiles/{model_configuration_id}")
+def remove_virtual_model_profile(
+    model_configuration_id: int,
+    user: User = Depends(require_permission(Permission.MANAGE_LLMS)),
+    db_session: Session = Depends(get_session),
+) -> None:
+    with settings_write_lock():
+        if load_settings().virtual_model_profiles_enabled:
+            default_profile = fetch_default_virtual_model(db_session)
+            if (
+                default_profile is not None
+                and default_profile.id == model_configuration_id
+            ):
+                raise OnyxError(
+                    OnyxErrorCode.VALIDATION_ERROR,
+                    "Change the default model profile before you delete this profile",
+                )
+        delete_virtual_model_profile(db_session, model_configuration_id)
+    invalidate_provider_listing_cache()
+    emit_audit_event(
+        AuditAction.MODEL_PROFILE_DELETE,
+        AuditOutcome.SUCCESS,
+        actor=actor_from_user(user),
+        resource_type="model_profile",
+        resource_id=model_configuration_id,
+    )
+
+
+@admin_router.put("/virtual-model-profiles-enabled")
+def put_virtual_model_profiles_enabled(
+    request: VirtualModelProfilesEnabledRequest,
+    user: User = Depends(require_permission(Permission.MANAGE_LLMS)),
+    db_session: Session = Depends(get_session),
+) -> VirtualModelProfilesResponse:
+    with settings_write_lock():
+        settings = load_settings(raise_on_error=True)
+        changed = request.enabled != settings.virtual_model_profiles_enabled
+        if changed:
+            if request.enabled:
+                default_profile = fetch_default_virtual_model(db_session)
+                if default_profile is None:
+                    raise OnyxError(
+                        OnyxErrorCode.VALIDATION_ERROR,
+                        "Create at least one model profile before you enable managed profiles",
+                    )
+                update_default_provider(
+                    default_profile.llm_provider_id,
+                    default_profile.name,
+                    db_session,
+                )
+            else:
+                current_default = fetch_default_llm_model(db_session)
+                if current_default and is_virtual_model_configuration(
+                    db_session, current_default.id
+                ):
+                    target = fetch_virtual_model_target(db_session, current_default.id)
+                    if target is None:
+                        raise OnyxError(
+                            OnyxErrorCode.VALIDATION_ERROR,
+                            "The default model profile has no target",
+                        )
+                    update_default_provider(
+                        target.llm_provider_id,
+                        target.name,
+                        db_session,
+                    )
+            settings.virtual_model_profiles_enabled = request.enabled
+            store_settings(settings)
+
+    invalidate_provider_listing_cache()
+    if changed:
+        emit_audit_event(
+            AuditAction.MODEL_PROFILE_MODE_CHANGE,
+            AuditOutcome.SUCCESS,
+            actor=actor_from_user(user),
+            resource_type="model_profile_settings",
+            extra={"enabled": request.enabled},
+        )
+    return _virtual_model_profiles_response(db_session)
 
 
 @admin_router.get("/provider")
@@ -757,7 +932,12 @@ def delete_llm_provider(
     try:
         remove_llm_provider(db_session, provider_id)
     except ValueError as e:
-        raise OnyxError(OnyxErrorCode.NOT_FOUND, str(e))
+        error_code = (
+            OnyxErrorCode.NOT_FOUND
+            if str(e) == "LLM Provider not found"
+            else OnyxErrorCode.VALIDATION_ERROR
+        )
+        raise OnyxError(error_code, str(e))
 
     emit_audit_event(
         AuditAction.LLM_PROVIDER_DELETE,
@@ -775,6 +955,23 @@ def set_provider_as_default(
     _: User = Depends(require_permission(Permission.MANAGE_LLMS)),
     db_session: Session = Depends(get_session),
 ) -> None:
+    provider = fetch_existing_llm_provider_by_id(
+        default_model_request.provider_id, db_session
+    )
+    if provider is None:
+        raise OnyxError(OnyxErrorCode.NOT_FOUND, "LLM provider was not found")
+    profiles_enabled = load_settings().virtual_model_profiles_enabled
+    is_virtual_provider = provider.provider == LlmProviderNames.ONYX_VIRTUAL
+    if profiles_enabled and not is_virtual_provider:
+        raise OnyxError(
+            OnyxErrorCode.VALIDATION_ERROR,
+            "Select a model profile while managed profiles are enabled",
+        )
+    if not profiles_enabled and is_virtual_provider:
+        raise OnyxError(
+            OnyxErrorCode.VALIDATION_ERROR,
+            "Enable managed profiles before you select a model profile",
+        )
     update_default_provider(
         provider_id=default_model_request.provider_id,
         model_name=default_model_request.model_name,
@@ -898,6 +1095,14 @@ def list_llm_provider_basics(
     start_time = datetime.now(timezone.utc)
     logger.debug("Starting to fetch user-accessible LLM providers")
 
+    if load_settings().virtual_model_profiles_enabled:
+        virtual_provider = fetch_virtual_provider_descriptor(db_session)
+        default_profile = fetch_default_virtual_model(db_session)
+        return LLMProviderResponse[LLMProviderDescriptor].from_models(
+            providers=[virtual_provider] if virtual_provider else [],
+            default_text=DefaultModel.from_model_config(default_profile),
+        )
+
     can_manage_llms = has_global_permission(user, Permission.MANAGE_LLMS)
     user_group_ids = (
         set() if can_manage_llms else fetch_user_group_ids(db_session, user)
@@ -991,6 +1196,13 @@ def get_valid_model_names_for_persona(
                 if model_config.is_visible
             )
 
+    if load_settings().virtual_model_profiles_enabled:
+        virtual_provider = fetch_virtual_provider_descriptor(db_session)
+        if virtual_provider:
+            valid_models.extend(
+                model.name for model in virtual_provider.model_configurations
+            )
+
     return valid_models
 
 
@@ -1020,6 +1232,10 @@ def get_valid_model_configuration_ids_for_persona(
             for model_config in llm_provider_model.model_configurations:
                 if model_config.is_visible and model_config.id is not None:
                     valid_ids.add(model_config.id)
+    if load_settings().virtual_model_profiles_enabled:
+        # Keep existing physical defaults valid so a temporary managed-mode
+        # change does not rewrite agents. Inference still enforces profiles.
+        valid_ids.update(fetch_virtual_model_configuration_ids(db_session))
     return valid_ids
 
 
@@ -1050,6 +1266,20 @@ def list_llm_providers_for_persona(
         raise OnyxError(
             OnyxErrorCode.INSUFFICIENT_PERMISSIONS,
             "You don't have access to this assistant",
+        )
+
+    if load_settings().virtual_model_profiles_enabled:
+        virtual_provider = fetch_virtual_provider_descriptor(db_session)
+        default_profile = fetch_default_virtual_model(db_session)
+        if persona.default_model_configuration_id and is_virtual_model_configuration(
+            db_session, persona.default_model_configuration_id
+        ):
+            default_profile = fetch_model_configuration_by_id(
+                db_session, persona.default_model_configuration_id
+            )
+        return LLMProviderResponse[LLMProviderDescriptor].from_models(
+            providers=[virtual_provider] if virtual_provider else [],
+            default_text=DefaultModel.from_model_config(default_profile),
         )
 
     can_manage_llms = has_global_permission(user, Permission.MANAGE_LLMS)

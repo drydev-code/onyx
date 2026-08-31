@@ -50,6 +50,7 @@ class Settings(BaseModel):
     invite_only_enabled: bool = False
     deep_research_enabled: bool | None = None
     multi_model_chat_enabled: bool | None = True
+    virtual_model_profiles_enabled: bool = False
     search_ui_enabled: bool | None = True
     auto_detect_search_filters: bool | None = True
 
