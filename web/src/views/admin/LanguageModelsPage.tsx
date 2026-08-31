@@ -354,6 +354,7 @@ export default function LanguageModelsPage() {
           LLMProviderName.VERTEX_AI,
           LLMProviderName.BEDROCK,
           LLMProviderName.AZURE,
+          LLMProviderName.GOOGLE_AI_STUDIO,
         ],
       },
       {
@@ -365,6 +366,8 @@ export default function LanguageModelsPage() {
           LLMProviderName.PORTKEY,
           LLMProviderName.NEBIUS_TOKENFACTORY,
           LLMProviderName.BIFROST,
+          LLMProviderName.OPENAI_CODEX,
+          LLMProviderName.CLAUDE_CODE_CLI,
         ],
       },
       {

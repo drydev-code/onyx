@@ -496,13 +496,18 @@ class LitellmLLM(LLM):
         ):
             model_kwargs[VERTEX_LOCATION_KWARG] = "global"
 
+        # Google AI Studio: Uses LiteLLM's gemini/ prefix for API key auth.
+        # Model names are prefixed with "gemini/" by LiteLLM.
+        if model_provider == LlmProviderNames.GOOGLE_AI_STUDIO:
+            self._custom_llm_provider = "gemini"
+
+        # OAuth-backed Codex providers are handled by CodexCLI in the factory;
+        # API-key-backed providers use LiteLLM's OpenAI-compatible path.
+        if model_provider == LlmProviderNames.OPENAI_CODEX:
+            self._custom_llm_provider = "openai"
+
         if self._api_surface in OPENAI_COMPATIBLE_SURFACES:
             self._custom_llm_provider = "openai"
-            # LiteLLM's OpenAI client requires an api_key to be set.
-            # Many OpenAI-compatible servers don't need auth, so supply a
-            # placeholder to prevent LiteLLM from raising AuthenticationError.
-            if not self._api_key:
-                model_kwargs.setdefault("api_key", "not-needed")
             if self._api_base is not None:
                 base = self._api_base.rstrip("/")
                 self._api_base = base if base.endswith("/v1") else f"{base}/v1"
@@ -654,12 +659,13 @@ class LitellmLLM(LLM):
 
         # Model name
         is_openai_compatible_proxy = self._api_surface in OPENAI_COMPATIBLE_SURFACES
+        is_google_ai_studio = self._model_provider == LlmProviderNames.GOOGLE_AI_STUDIO
+        is_openai_codex = self._model_provider == LlmProviderNames.OPENAI_CODEX
         model_provider = (
             f"{self.config.model_provider}/responses"
             if is_openai_model  # Uses litellm's completions -> responses bridge
             else self.config.model_provider
         )
-
         # Azure responses-bridge calls must target the v1 responses surface:
         # with a dated api-version, LiteLLM builds the legacy /openai/responses
         # URL, which sovereign clouds (e.g. Azure Government) do not serve
@@ -680,7 +686,13 @@ class LitellmLLM(LLM):
             api_version = None
 
         model_bare = self.config.deployment_name or self.config.model_name
-        if self._api_surface is LlmApiSurface.OPENAI_RESPONSES:
+        if is_google_ai_studio:
+            # Google AI Studio uses LiteLLM's gemini/ prefix.
+            model = f"gemini/{model_bare}"
+        elif is_openai_codex:
+            # API-key-backed Codex uses the OpenAI-compatible route.
+            model = model_bare
+        elif self._api_surface is LlmApiSurface.OPENAI_RESPONSES:
             # Drives LiteLLM's completions -> responses bridge.
             model = f"responses/{model_bare}"
         elif self._api_surface is not None:
@@ -849,11 +861,12 @@ class LitellmLLM(LLM):
         if (
             not (is_claude_model or is_ollama or is_mistral)
             or is_openai_compatible_proxy
+            or is_openai_codex
         ):
             # Litellm bug: tool_choice is dropped silently if not specified here for OpenAI
             # However, this param breaks Anthropic and Mistral models,
             # so it must be conditionally included unless the request is
-            # routed through Bifrost's OpenAI-compatible endpoint.
+            # routed through an OpenAI-compatible endpoint (Bifrost, Z.AI, Codex).
             # Additionally, tool_choice is not supported by Ollama and causes warnings if included.
             # See also, https://github.com/ollama/ollama/issues/11171
             optional_kwargs["allowed_openai_params"] = ["tool_choice"]

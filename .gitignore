@@ -68,3 +68,7 @@ plans
 .claude/scheduled_tasks.lock
 .claude/worktrees/
 !.claude/settings.json
+
+# integration-pipeline.sh artifacts
+/integration-build-report.json
+/.integration-logs/

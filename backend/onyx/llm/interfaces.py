@@ -44,6 +44,13 @@ class LLMConfig(BaseModel):
     reasoning_effort_default: ReasoningEffort | None = None
     reasoning_effort_user_default: ReasoningEffort | None = None
     reasoning_effort_max: ReasoningEffort | None = None
+    # Map from provider-native tool name -> bridge category. When set, a
+    # provider declares that it self-executes certain tools internally
+    # (e.g. Claude Code CLI runs tools inside the CLI binary via MCP).
+    # llm_step.py routes matching tool_calls to the CLI bridge helper for
+    # direct UI packet emission and skips the normal kickoff/execution
+    # path for those tools. Leave None for standard LiteLLM providers.
+    cli_tool_bridge: dict[str, str] | None = None
     # This disables the "model_" protected namespace for pydantic
     model_config = {"protected_namespaces": ()}
 
