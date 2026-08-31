@@ -11,6 +11,7 @@ MERGED_BRANCH="integration/merged"
 SYNC_MAIN=true
 ALLOW_DIRTY=false
 DEFAULT_FEATURE_BRANCHES=(
+    "feature/reasoning-effort"
     "feature/glm"
     "feature/google-ai-studio-llm"
     "feature/google-ai-studio-image"
@@ -18,6 +19,7 @@ DEFAULT_FEATURE_BRANCHES=(
     "feature/codex"
     "feature/claude-code"
     "feature/branding"
+    "feature/virtual-llm-routing"
 )
 
 usage() {
@@ -48,13 +50,15 @@ Behavior:
   - Merges either the provided feature branches or the default fork feature order
 
 Default feature merge order:
-  1. feature/glm
-  2. feature/google-ai-studio-llm
-  3. feature/google-ai-studio-image
-  4. feature/imagerouter
-  5. feature/codex
-  6. feature/claude-code
-  7. feature/branding
+  1. feature/reasoning-effort
+  2. feature/glm
+  3. feature/google-ai-studio-llm
+  4. feature/google-ai-studio-image
+  5. feature/imagerouter
+  6. feature/codex
+  7. feature/claude-code
+  8. feature/branding
+  9. feature/virtual-llm-routing
 EOF
 }
 

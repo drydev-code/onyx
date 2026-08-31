@@ -119,11 +119,13 @@ main (upstream mirror)
   |
   +-- integration/base (shared plumbing on top of main)
         |
+        +-- feature/reasoning-effort
         +-- feature/google-ai-studio-llm
         +-- feature/google-ai-studio-image
         +-- feature/imagerouter
         +-- feature/codex
         +-- feature/claude-code
+        +-- feature/virtual-llm-routing
         |
         +-- integration/merged (all features merged together)
 ```
