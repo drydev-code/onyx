@@ -45,6 +45,7 @@ export const SWR_KEYS = {
   llmProvidersForAgent: (agentId: number) =>
     `/api/llm/persona/${agentId}/providers`,
   adminLlmProviders: "/api/admin/llm/provider",
+  virtualModelProfiles: "/api/admin/llm/virtual-model-profiles",
   llmProvidersWithImageGen: "/api/admin/llm/provider?include_image_gen=true",
   customProviderNames: "/api/admin/llm/custom-provider-names",
   wellKnownLlmProviders: "/api/admin/llm/built-in/options",

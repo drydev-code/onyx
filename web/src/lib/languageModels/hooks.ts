@@ -13,6 +13,7 @@ import {
   LLMProviderResponse,
   LLMProviderView,
   ModelConfiguration,
+  VirtualModelProfilesResponse,
   WellKnownLLMProviderDescriptor,
 } from "@/lib/languageModels/types";
 
@@ -211,6 +212,24 @@ export function useAdminLLMProviders() {
     defaultVision: data?.default_vision ?? null,
     defaultChatNaming: data?.default_chat_naming ?? null,
     isLoading: !error && !data,
+    error,
+    refetch: mutate,
+  };
+}
+
+export function useVirtualModelProfiles() {
+  const { data, error, isLoading, mutate } =
+    useSWR<VirtualModelProfilesResponse>(
+      SWR_KEYS.virtualModelProfiles,
+      errorHandlingFetcher,
+      {
+        revalidateOnFocus: false,
+      }
+    );
+
+  return {
+    virtualModelProfiles: data,
+    isLoading,
     error,
     refetch: mutate,
   };

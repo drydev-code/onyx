@@ -4147,6 +4147,43 @@
           "title": "セルフホストとカスタム"
         }
       },
+      "virtualProfiles": {
+        "addButton": "プロファイルを追加",
+        "defaultTag": "デフォルト",
+        "deleteAria": "{name}を削除",
+        "deleteModal": {
+          "description": "ユーザーはこのプロファイルを選択できなくなります。",
+          "submit": "削除",
+          "title": "{name}を削除"
+        },
+        "disabledDescription": "ユーザーはプロバイダーモデルを直接選択します。プロファイルを追加してから管理対象プロファイルを有効にしてください。",
+        "editAria": "{name}を編集",
+        "emptyDescription": "簡単な名前を追加し、設定済みのプロバイダーモデルに割り当てます。",
+        "enabledDescription": "すべてのユーザーにはこれらのプロファイル名のみが表示されます。Onyx は各プロファイルを現在のターゲットに解決します。",
+        "form": {
+          "createTitle": "モデルプロファイルを追加",
+          "editTitle": "モデルプロファイルを編集",
+          "nameLabel": "プロファイル名",
+          "namePlaceholder": "通常エージェント",
+          "saveButton": "保存",
+          "targetLabel": "ルーティング先"
+        },
+        "listTitle": "モデルプロファイル",
+        "routesTo": "{provider} · {model} にルーティング",
+        "setDefaultButton": "デフォルトに設定",
+        "title": "管理対象モデルプロファイル",
+        "toasts": {
+          "defaultFailed": "デフォルトプロファイルを更新できませんでした。",
+          "defaultUpdated": "デフォルトプロファイルを更新しました。",
+          "deleteFailed": "プロファイルを削除できませんでした。",
+          "deleted": "モデルプロファイルを削除しました。",
+          "disabled": "管理対象モデルプロファイルを無効にしました。",
+          "enabled": "管理対象モデルプロファイルを有効にしました。",
+          "saveFailed": "プロファイルを保存できませんでした。",
+          "saved": "モデルプロファイルを保存しました。",
+          "toggleFailed": "管理対象モデルプロファイルを変更できませんでした。"
+        }
+      },
       "modals": {
         "access": {
           "admin": {

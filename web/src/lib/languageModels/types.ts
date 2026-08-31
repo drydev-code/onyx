@@ -161,6 +161,30 @@ export interface LLMProviderResponse<T> {
   default_chat_naming: DefaultModel | null;
 }
 
+export interface VirtualModelProfile {
+  provider_id: number;
+  model_configuration_id: number;
+  model_name: string;
+  name: string;
+  target_model_configuration_id: number;
+  target_model_name: string;
+  target_model_display_name: string;
+  target_provider_id: number;
+  target_provider_name: string;
+  target_provider_type: string;
+}
+
+export interface VirtualModelProfilesResponse {
+  enabled: boolean;
+  default_model_configuration_id: number | null;
+  profiles: VirtualModelProfile[];
+}
+
+export interface VirtualModelProfileRequest {
+  name: string;
+  target_model_configuration_id: number;
+}
+
 export type LLMModalVariant = "onboarding" | "llm-configuration";
 
 export interface LLMProviderFormProps {

@@ -85,6 +85,15 @@ def admin_patch_settings(
         # Fail closed: a settings-read error must not fall back to defaults and
         # silently disable an access-control field like invite_only_enabled.
         existing = load_settings(raise_on_error=True)
+        if (
+            "virtual_model_profiles_enabled" in settings.model_fields_set
+            and settings.virtual_model_profiles_enabled
+            != existing.virtual_model_profiles_enabled
+        ):
+            raise OnyxError(
+                OnyxErrorCode.VALIDATION_ERROR,
+                "Change managed model profiles on the Language Models page",
+            )
         # Merge only the fields the caller sent so omitted fields keep their
         # stored value. Access-control fields rely on this: a partial write
         # must not silently reset them to pydantic defaults.

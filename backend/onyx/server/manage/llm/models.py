@@ -631,6 +631,42 @@ class DefaultModel(BaseModel):
         )
 
 
+class VirtualModelProfileRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    target_model_configuration_id: int
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Profile name cannot be empty")
+        return normalized
+
+
+class VirtualModelProfileView(BaseModel):
+    provider_id: int
+    model_configuration_id: int
+    model_name: str
+    name: str
+    target_model_configuration_id: int
+    target_model_name: str
+    target_model_display_name: str
+    target_provider_id: int
+    target_provider_name: str
+    target_provider_type: str
+
+
+class VirtualModelProfilesResponse(BaseModel):
+    enabled: bool
+    default_model_configuration_id: int | None = None
+    profiles: list[VirtualModelProfileView]
+
+
+class VirtualModelProfilesEnabledRequest(BaseModel):
+    enabled: bool
+
+
 class LLMProviderResponse(BaseModel, Generic[T]):
     providers: list[T]
     default_text: DefaultModel | None = None

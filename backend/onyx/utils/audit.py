@@ -89,6 +89,10 @@ class AuditAction(str, Enum):
     LLM_PROVIDER_CREATE = "llm_provider.create"
     LLM_PROVIDER_UPDATE = "llm_provider.update"
     LLM_PROVIDER_DELETE = "llm_provider.delete"
+    MODEL_PROFILE_CREATE = "model_profile.create"
+    MODEL_PROFILE_UPDATE = "model_profile.update"
+    MODEL_PROFILE_DELETE = "model_profile.delete"
+    MODEL_PROFILE_MODE_CHANGE = "model_profile.mode_change"
     CONNECTOR_CREATE = "connector.create"
     CONNECTOR_UPDATE = "connector.update"
     CONNECTOR_DELETE = "connector.delete"
@@ -135,6 +139,10 @@ _OCSF_CLASS_BY_ACTION: dict[AuditAction, OCSFEventClass] = {
     AuditAction.LLM_PROVIDER_CREATE: OCSFEventClass.API_ACTIVITY,
     AuditAction.LLM_PROVIDER_UPDATE: OCSFEventClass.API_ACTIVITY,
     AuditAction.LLM_PROVIDER_DELETE: OCSFEventClass.API_ACTIVITY,
+    AuditAction.MODEL_PROFILE_CREATE: OCSFEventClass.API_ACTIVITY,
+    AuditAction.MODEL_PROFILE_UPDATE: OCSFEventClass.API_ACTIVITY,
+    AuditAction.MODEL_PROFILE_DELETE: OCSFEventClass.API_ACTIVITY,
+    AuditAction.MODEL_PROFILE_MODE_CHANGE: OCSFEventClass.API_ACTIVITY,
     AuditAction.CONNECTOR_CREATE: OCSFEventClass.API_ACTIVITY,
     AuditAction.CONNECTOR_UPDATE: OCSFEventClass.API_ACTIVITY,
     AuditAction.CONNECTOR_DELETE: OCSFEventClass.API_ACTIVITY,

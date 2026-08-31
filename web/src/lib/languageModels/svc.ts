@@ -32,7 +32,62 @@ import {
   type NebiusTokenfactoryModelResponse,
   type PortkeyFetchParams,
   type PortkeyModelResponse,
+  type VirtualModelProfile,
+  type VirtualModelProfileRequest,
+  type VirtualModelProfilesResponse,
 } from "@/lib/languageModels/types";
+
+async function virtualModelProfileResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const body = await response.json();
+    throw new Error(body.detail || "Failed to update model profiles");
+  }
+  return response.json();
+}
+
+export async function saveVirtualModelProfile(
+  request: VirtualModelProfileRequest,
+  modelConfigurationId?: number
+): Promise<VirtualModelProfile> {
+  const response = await fetch(
+    modelConfigurationId
+      ? `${SWR_KEYS.virtualModelProfiles}/${modelConfigurationId}`
+      : SWR_KEYS.virtualModelProfiles,
+    {
+      method: modelConfigurationId ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    }
+  );
+  return virtualModelProfileResponse<VirtualModelProfile>(response);
+}
+
+export async function deleteVirtualModelProfile(
+  modelConfigurationId: number
+): Promise<void> {
+  const response = await fetch(
+    `${SWR_KEYS.virtualModelProfiles}/${modelConfigurationId}`,
+    { method: "DELETE" }
+  );
+  if (!response.ok) {
+    const body = await response.json();
+    throw new Error(body.detail || "Failed to delete model profile");
+  }
+}
+
+export async function setVirtualModelProfilesEnabled(
+  enabled: boolean
+): Promise<VirtualModelProfilesResponse> {
+  const response = await fetch(
+    "/api/admin/llm/virtual-model-profiles-enabled",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }
+  );
+  return virtualModelProfileResponse<VirtualModelProfilesResponse>(response);
+}
 
 /**
  * Test the default LLM provider.
