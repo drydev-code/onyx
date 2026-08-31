@@ -1,7 +1,7 @@
 """Tests for new LLM providers: zai, google_ai_studio, openai_codex, claude_code_cli.
 
 Covers:
-- factory.get_llm() routing: claude_code_cli returns ClaudeCodeCLI, others return LitellmLLM
+- factory.get_llm() routing for CLI-backed and LiteLLM-backed providers
 - LitellmLLM.__init__ model name transformation for zai, google_ai_studio, openai_codex
 - Well-known provider model list functions
 """
@@ -132,21 +132,20 @@ def test_litellm_google_ai_studio_sets_gemini_custom_provider() -> None:
     assert llm._custom_llm_provider == "gemini"
 
 
-def test_litellm_openai_codex_sets_openai_provider_and_reads_access_token() -> None:
-    """openai_codex provider should set _custom_llm_provider='openai' and use access token as api_key."""
-    from onyx.llm.multi_llm import LitellmLLM
-
+def test_get_llm_openai_codex_with_access_token_returns_codex_cli() -> None:
+    """OAuth-backed Codex providers should use the Codex CLI."""
     access_token = "codex-oauth-token-abc123"
-    llm = LitellmLLM(
-        api_key="original-key",
-        model_provider=LlmProviderNames.OPENAI_CODEX,
-        model_name="o3",
-        max_input_tokens=128000,
-        custom_config={OPENAI_CODEX_ACCESS_TOKEN_KEY: access_token},
-    )
+    with patch("onyx.llm.codex_cli.CodexCLI") as mock_codex_cli:
+        llm = get_llm(
+            api_key="original-key",
+            provider=LlmProviderNames.OPENAI_CODEX,
+            model="o3",
+            deployment_name=None,
+            max_input_tokens=128000,
+            custom_config={OPENAI_CODEX_ACCESS_TOKEN_KEY: access_token},
+        )
 
-    assert llm._custom_llm_provider == "openai"
-    assert llm._api_key == access_token
+    assert llm is mock_codex_cli.return_value
 
 
 def test_litellm_openai_codex_without_access_token_keeps_api_key() -> None:
