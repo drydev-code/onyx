@@ -120,9 +120,10 @@ write_report() {
     local failing_files="[]"
     if [[ -n "$log_file" && -f "$log_file" ]]; then
         # Grep for common error patterns: file paths with line numbers
-        failing_files=$(grep -oP '(?:^|\s)\./?\S+\.[jt]sx?(?::\d+)?' "$log_file" 2>/dev/null \
+        failing_files=$({ grep -oP '(?:^|\s)\./?\S+\.[jt]sx?(?::\d+)?' "$log_file" 2>/dev/null || true; } \
             | sort -u | head -20 \
-            | json_array 2>/dev/null || echo "[]")
+            | json_array 2>/dev/null)
+        failing_files="${failing_files:-[]}"
     fi
 
     cat > "$REPORT_FILE" <<ENDJSON
@@ -218,11 +219,24 @@ stage_build() {
 }
 
 stage_backend() {
+    local -a BACKEND_PYTHON
+
     # compileall in a single process: the old loop forked one `python -m
     # py_compile` per file, which took minutes and exhausted Git Bash's fork
     # table on Windows ("dofork: child died unexpectedly").
     echo "    Checking Python syntax..."
-    if ! python -m compileall -q "$SCRIPT_DIR/backend/onyx"; then
+    if [[ -x "$SCRIPT_DIR/.venv/Scripts/python.exe" ]]; then
+        BACKEND_PYTHON=("$SCRIPT_DIR/.venv/Scripts/python.exe")
+    elif [[ -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
+        BACKEND_PYTHON=("$SCRIPT_DIR/.venv/bin/python")
+    elif command -v uv >/dev/null 2>&1; then
+        BACKEND_PYTHON=(uv run --frozen --project "$SCRIPT_DIR" python)
+    else
+        echo "    Repository Python environment not found. Run: uv sync --frozen"
+        return 1
+    fi
+
+    if ! "${BACKEND_PYTHON[@]}" -m compileall -q "$SCRIPT_DIR/backend/onyx"; then
         echo "    Python files have syntax errors (see above)"
         return 1
     fi
@@ -231,7 +245,7 @@ stage_backend() {
     # Check for broken imports in new provider files, and assert that every
     # provider this fork adds actually survived the merge.
     echo "    Checking provider module imports..."
-    (cd "$SCRIPT_DIR/backend" && python -c "
+    (cd "$SCRIPT_DIR/backend" && "${BACKEND_PYTHON[@]}" -c "
 from onyx.llm.constants import LlmProviderNames, WELL_KNOWN_PROVIDER_NAMES
 from onyx.llm.well_known_providers.constants import *
 from onyx.llm.well_known_providers.llm_provider_options import (
