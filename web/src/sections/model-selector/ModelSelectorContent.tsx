@@ -206,6 +206,8 @@ function ModelDetailPane({ option, managers, onBack }: ModelDetailPaneProps) {
     medium: t("reasoningLevel.medium.label"),
     high: t("reasoningLevel.high.label"),
     xhigh: t("reasoningLevel.xhigh.label"),
+    max: t("reasoningLevel.max.label"),
+    ultra: t("reasoningLevel.ultra.label"),
   } satisfies Record<ReasoningEffortOverride, string>;
   const effortLabel =
     reasoningStopLabels[ALL_REASONING_STOPS[localEffortStop] ?? "medium"];

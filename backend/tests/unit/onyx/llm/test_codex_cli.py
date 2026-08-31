@@ -15,20 +15,20 @@ Covers:
 
 import json
 from io import StringIO
-from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from onyx.llm.codex_cli import _build_codex_usage
-from onyx.llm.codex_cli import _CODEX_DISABLE_WEB_TOOL_FLAGS
-from onyx.llm.codex_cli import _CODEX_OUTPUT_MAX_CHARS
-from onyx.llm.codex_cli import _format_codex_command_result
-from onyx.llm.codex_cli import _format_codex_command_start
-from onyx.llm.codex_cli import CodexCLI
+from onyx.llm.codex_cli import (
+    _CODEX_DISABLE_WEB_TOOL_FLAGS,
+    _CODEX_OUTPUT_MAX_CHARS,
+    CodexCLI,
+    _build_codex_usage,
+    _format_codex_command_result,
+    _format_codex_command_start,
+)
 from onyx.llm.model_response import ModelResponseStream
-from onyx.llm.models import UserMessage
-
+from onyx.llm.models import ReasoningEffort, UserMessage
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -53,13 +53,9 @@ def _make_proc(stdout_text: str) -> MagicMock:
     return proc
 
 
-def _run_stream(
-    cli: CodexCLI, events: list[dict]
-) -> list[ModelResponseStream]:
+def _run_stream(cli: CodexCLI, events: list[dict]) -> list[ModelResponseStream]:
     """Drive cli.stream() against a canned sequence of JSONL events."""
-    stdout = "\n".join(json.dumps(e) for e in events) + (
-        "\n" if events else ""
-    )
+    stdout = "\n".join(json.dumps(e) for e in events) + ("\n" if events else "")
     proc = _make_proc(stdout)
     with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc):
         with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
@@ -73,9 +69,7 @@ def _run_stream(
 
 def test_stream_command_uses_json_flag() -> None:
     proc = _make_proc("")
-    with patch(
-        "onyx.llm.codex_cli.subprocess.Popen", return_value=proc
-    ) as mock_popen:
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
         with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
             list(_make_cli().stream([UserMessage(content="hi")]))
 
@@ -91,9 +85,7 @@ def test_stream_command_uses_json_flag() -> None:
 
 def test_stream_command_disables_web_search_by_default() -> None:
     proc = _make_proc("")
-    with patch(
-        "onyx.llm.codex_cli.subprocess.Popen", return_value=proc
-    ) as mock_popen:
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
         with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
             list(_make_cli().stream([UserMessage(content="hi")]))
 
@@ -105,12 +97,8 @@ def test_stream_command_disables_web_search_by_default() -> None:
 
 def test_stream_command_toggle_off_keeps_web_search() -> None:
     proc = _make_proc("")
-    cli = _make_cli(
-        custom_config={"openai_codex_disable_builtin_tools": "false"}
-    )
-    with patch(
-        "onyx.llm.codex_cli.subprocess.Popen", return_value=proc
-    ) as mock_popen:
+    cli = _make_cli(custom_config={"openai_codex_disable_builtin_tools": "false"})
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
         with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
             list(cli.stream([UserMessage(content="hi")]))
 
@@ -120,19 +108,30 @@ def test_stream_command_toggle_off_keeps_web_search() -> None:
 
 def test_stream_command_includes_instructions() -> None:
     proc = _make_proc("")
-    with patch(
-        "onyx.llm.codex_cli.subprocess.Popen", return_value=proc
-    ) as mock_popen:
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
         with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
             list(_make_cli().stream([UserMessage(content="hi")]))
 
     cmd = mock_popen.call_args[0][0]
     # There should be a -c instructions="..." somewhere
     c_indices = [i for i, v in enumerate(cmd) if v == "-c"]
-    instructions_found = any(
-        cmd[i + 1].startswith("instructions=") for i in c_indices
-    )
+    instructions_found = any(cmd[i + 1].startswith("instructions=") for i in c_indices)
     assert instructions_found
+
+
+def test_stream_command_passes_resolved_reasoning_effort() -> None:
+    proc = _make_proc("")
+    cli = CodexCLI(
+        model_name="gpt-5.6-sol",
+        reasoning_effort_default=ReasoningEffort.ULTRA,
+        reasoning_effort_max=ReasoningEffort.MAX,
+    )
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
+        with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
+            list(cli.stream([UserMessage(content="hi")]))
+
+    cmd = mock_popen.call_args[0][0]
+    assert 'model_reasoning_effort="max"' in cmd
 
 
 # ---------------------------------------------------------------------------
@@ -256,9 +255,7 @@ def test_stream_agent_message_yields_content() -> None:
         ],
     )
 
-    text_chunks = [
-        c.choice.delta.content for c in chunks if c.choice.delta.content
-    ]
+    text_chunks = [c.choice.delta.content for c in chunks if c.choice.delta.content]
     assert text_chunks == ["Hello there!"]
 
 
@@ -287,9 +284,7 @@ def test_stream_alternative_answer_item_types_yield_content(
         ],
     )
 
-    text_chunks = [
-        c.choice.delta.content for c in chunks if c.choice.delta.content
-    ]
+    text_chunks = [c.choice.delta.content for c in chunks if c.choice.delta.content]
     assert text_chunks == ["Final answer!"]
 
 
@@ -310,9 +305,7 @@ def test_stream_agent_message_with_content_field_yields_content() -> None:
         ],
     )
 
-    text_chunks = [
-        c.choice.delta.content for c in chunks if c.choice.delta.content
-    ]
+    text_chunks = [c.choice.delta.content for c in chunks if c.choice.delta.content]
     assert text_chunks == ["Hello from content field"]
 
 
@@ -461,9 +454,7 @@ def test_detect_codex_auth_failure_recognizes_known_markers() -> None:
     assert _detect_codex_auth_failure(
         "HTTP error: 401 Unauthorized, url: wss://chatgpt.com/..."
     )
-    assert _detect_codex_auth_failure(
-        "ERROR codex_login::auth::manager: ..."
-    )
+    assert _detect_codex_auth_failure("ERROR codex_login::auth::manager: ...")
     assert _detect_codex_auth_failure("invalid_grant")
     assert not _detect_codex_auth_failure("model is overloaded")
     assert not _detect_codex_auth_failure("")

@@ -21,8 +21,9 @@ from onyx.db.models import LLMProvider as LLMProviderModel
 from onyx.db.models import Persona, SearchSettings, User
 from onyx.db.virtual_llm import (
     fetch_default_virtual_model,
-    fetch_virtual_model_target_by_provider_and_name,
+    fetch_virtual_model_profile_by_provider_and_name,
     is_virtual_model_configuration,
+    virtual_model_configuration_to_view,
 )
 from onyx.llm.constants import LlmProviderNames
 from onyx.llm.interfaces import LLM, LlmRequestPolicy
@@ -381,13 +382,43 @@ def llm_from_provider(
 ) -> LLM:
     if llm_provider.provider == LlmProviderNames.ONYX_VIRTUAL:
         with get_session_with_current_tenant() as db_session:
-            target = fetch_virtual_model_target_by_provider_and_name(
+            profile = fetch_virtual_model_profile_by_provider_and_name(
                 db_session, llm_provider.id, model_name
             )
-            if target is None:
+            if profile is None:
                 raise ValueError(f"Model profile '{model_name}' was not found")
+            target = profile.target_model_configuration
+            profile_configuration = virtual_model_configuration_to_view(profile)
             target_model_name = target.name
             target_provider = LLMProviderView.from_model(target.llm_provider)
+            target_provider = target_provider.model_copy(
+                update={
+                    "model_configurations": [
+                        configuration.model_copy(
+                            update={
+                                "max_input_tokens": (
+                                    profile_configuration.max_input_tokens
+                                ),
+                                "configured_max_input_tokens": (
+                                    profile_configuration.configured_max_input_tokens
+                                ),
+                                "reasoning_effort_max": (
+                                    profile_configuration.reasoning_effort_max
+                                ),
+                                "reasoning_effort_default": (
+                                    profile_configuration.reasoning_effort_default
+                                ),
+                                "temperature_default": (
+                                    profile_configuration.temperature_default
+                                ),
+                            }
+                        )
+                        if configuration.name == target_model_name
+                        else configuration
+                        for configuration in target_provider.model_configurations
+                    ]
+                }
+            )
         return llm_from_provider(
             model_name=target_model_name,
             llm_provider=target_provider,
@@ -566,6 +597,9 @@ def get_llm(
                 custom_config=custom_config,
                 timeout=timeout,
                 max_input_tokens=max_input_tokens,
+                reasoning_effort_default=reasoning_effort_default,
+                reasoning_effort_user_default=reasoning_effort_user_default,
+                reasoning_effort_max=reasoning_effort_max,
             )
 
     # Claude Code CLI uses a subprocess-based LLM, not LiteLLM
@@ -579,6 +613,9 @@ def get_llm(
             custom_config=custom_config,
             timeout=timeout,
             max_input_tokens=max_input_tokens,
+            reasoning_effort_default=reasoning_effort_default,
+            reasoning_effort_user_default=reasoning_effort_user_default,
+            reasoning_effort_max=reasoning_effort_max,
         )
 
     return LitellmLLM(

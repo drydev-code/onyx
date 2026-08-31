@@ -13,6 +13,8 @@ from onyx.llm.models import ReasoningEffort, parse_user_selectable_reasoning_eff
         ("medium", ReasoningEffort.MEDIUM),
         ("high", ReasoningEffort.HIGH),
         ("xhigh", ReasoningEffort.XHIGH),
+        ("max", ReasoningEffort.MAX),
+        ("ultra", ReasoningEffort.ULTRA),
     ],
 )
 def test_parse_user_selectable_reasoning_effort_accepts_user_selectable_values(
@@ -27,7 +29,7 @@ def test_parse_user_selectable_reasoning_effort_rejects_auto() -> None:
         parse_user_selectable_reasoning_effort("auto")
 
 
-@pytest.mark.parametrize("value", ["ultra", ""])
+@pytest.mark.parametrize("value", ["super", ""])
 def test_parse_user_selectable_reasoning_effort_rejects_unknown_values(
     value: str,
 ) -> None:

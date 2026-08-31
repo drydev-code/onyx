@@ -11,6 +11,7 @@ from onyx.db.models import LLMModelFlow, ModelConfiguration, User, VirtualLLMMod
 from onyx.db.models import LLMProvider as LLMProviderModel
 from onyx.llm import factory
 from onyx.llm.constants import LlmProviderNames
+from onyx.llm.models import ReasoningEffort
 from onyx.server.manage.llm.models import LLMProviderView, ModelConfigurationView
 
 
@@ -49,6 +50,7 @@ def test_llm_from_virtual_provider_resolves_current_physical_target(
     physical_provider = _provider_view(LlmProviderNames.OPENAI, "gpt-4o", 7)
     target_provider_model = object()
     target = SimpleNamespace(name="gpt-4o", llm_provider=target_provider_model)
+    profile = SimpleNamespace(target_model_configuration=target)
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -58,9 +60,23 @@ def test_llm_from_virtual_provider_resolves_current_physical_target(
     )
     monkeypatch.setattr(
         factory,
-        "fetch_virtual_model_target_by_provider_and_name",
+        "fetch_virtual_model_profile_by_provider_and_name",
         lambda _session, provider_id, model_name: (
-            target if (provider_id, model_name) == (41, "profile-stable-id") else None
+            profile if (provider_id, model_name) == (41, "profile-stable-id") else None
+        ),
+    )
+    monkeypatch.setattr(
+        factory,
+        "virtual_model_configuration_to_view",
+        lambda _profile: ModelConfigurationView(
+            id=41,
+            name="profile-stable-id",
+            is_visible=True,
+            max_input_tokens=32_000,
+            supports_image_input=True,
+            reasoning_effort_max=ReasoningEffort.HIGH,
+            reasoning_effort_default=ReasoningEffort.MEDIUM,
+            temperature_default=0.4,
         ),
     )
     monkeypatch.setattr(
@@ -79,7 +95,10 @@ def test_llm_from_virtual_provider_resolves_current_physical_target(
 
     assert captured["provider"] == LlmProviderNames.OPENAI
     assert captured["model"] == "gpt-4o"
-    assert captured["max_input_tokens"] == 128_000
+    assert captured["max_input_tokens"] == 32_000
+    assert captured["reasoning_effort_max"] == ReasoningEffort.HIGH
+    assert captured["reasoning_effort_default"] == ReasoningEffort.MEDIUM
+    assert captured["temperature"] == 0.4
 
 
 def test_virtual_model_view_uses_alias_identity_and_target_capabilities(
@@ -130,12 +149,12 @@ def test_virtual_model_view_uses_alias_identity_and_target_capabilities(
         llm_provider_id=41,
         name="profile-stable-id",
         is_visible=True,
-        max_input_tokens=None,
+        max_input_tokens=32_000,
         display_name="Normal Agent",
         custom_display_name=None,
-        reasoning_effort_max=None,
-        reasoning_effort_default=None,
-        temperature_default=None,
+        reasoning_effort_max=ReasoningEffort.HIGH,
+        reasoning_effort_default=ReasoningEffort.MEDIUM,
+        temperature_default=0.3,
     )
     alias.llm_provider = alias_provider
     alias.llm_model_flows = [
@@ -164,15 +183,21 @@ def test_virtual_model_view_uses_alias_identity_and_target_capabilities(
             display_name="GPT-4o",
             provider_display_name="OpenAI",
             vendor="OpenAI",
+            reasoning_effort_max=ReasoningEffort.XHIGH,
+            reasoning_effort_default=ReasoningEffort.HIGH,
+            temperature_default=0.7,
         ),
     )
 
-    view = virtual_llm._virtual_model_view(profile)
+    view = virtual_llm.virtual_model_configuration_to_view(profile)
 
     assert view.id == 51
     assert view.name == "profile-stable-id"
     assert view.display_name == "Normal Agent"
-    assert view.max_input_tokens == 64_000
+    assert view.max_input_tokens == 32_000
+    assert view.reasoning_effort_max == ReasoningEffort.HIGH
+    assert view.reasoning_effort_default == ReasoningEffort.MEDIUM
+    assert view.temperature_default == 0.3
     assert view.supports_image_input is True
     assert view.provider_display_name is None
     assert view.vendor is None

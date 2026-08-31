@@ -30,10 +30,15 @@ import {
 } from "@/lib/languageModels/svc";
 import type {
   LLMProviderView,
+  ReasoningEffortOverride,
   VirtualModelProfile,
   VirtualModelProfilesResponse,
 } from "@/lib/languageModels/types";
 import ModelSelector from "@/sections/model-selector/ModelSelector";
+import {
+  ModelSettingsPopover,
+  type ModelSettingsPatch,
+} from "@/sections/modals/languageModels/ModelSettingsPopover";
 
 interface ProfileFormModalProps {
   profile: VirtualModelProfile | null;
@@ -47,21 +52,85 @@ function ProfileFormModal({
   onClose,
 }: ProfileFormModalProps) {
   const t = useTranslations("admin.languageModels.virtualProfiles");
+  const tModelSelector = useTranslations("chat.modelSelector");
   const { mutate } = useSWRConfig();
   const [name, setName] = useState(profile?.name ?? "");
   const [targetId, setTargetId] = useState<number | null>(
     profile?.target_model_configuration_id ?? null
   );
+  const [maxInputTokens, setMaxInputTokens] = useState(
+    profile?.max_input_tokens?.toString() ?? ""
+  );
+  const [reasoningEffortMax, setReasoningEffortMax] =
+    useState<ReasoningEffortOverride | null>(
+      profile?.reasoning_effort_max ?? null
+    );
+  const [reasoningEffortDefault, setReasoningEffortDefault] =
+    useState<ReasoningEffortOverride | null>(
+      profile?.reasoning_effort_default ?? null
+    );
+  const [temperatureDefault, setTemperatureDefault] = useState<number | null>(
+    profile?.temperature_default ?? null
+  );
   const [saving, setSaving] = useState(false);
+  const targetModel = providers
+    .flatMap((provider) => provider.model_configurations)
+    .find((model) => model.id === targetId);
+  const contextOverride = maxInputTokens ? Number(maxInputTokens) : null;
+  const contextIsValid =
+    contextOverride === null ||
+    (Number.isInteger(contextOverride) &&
+      contextOverride > 0 &&
+      (targetModel?.max_input_tokens === null ||
+        targetModel?.max_input_tokens === undefined ||
+        contextOverride <= targetModel.max_input_tokens));
+  const settingsModel = targetModel
+    ? {
+        ...targetModel,
+        max_input_tokens: contextOverride ?? targetModel.max_input_tokens,
+        reasoning_effort_max:
+          reasoningEffortMax ?? targetModel.reasoning_effort_max,
+        reasoning_effort_default:
+          reasoningEffortDefault ?? targetModel.reasoning_effort_default,
+        temperature_default:
+          temperatureDefault ?? targetModel.temperature_default,
+      }
+    : null;
+
+  function updateSettings(patch: ModelSettingsPatch) {
+    if (patch.reasoning_effort_max !== undefined) {
+      setReasoningEffortMax(patch.reasoning_effort_max);
+    }
+    if (patch.reasoning_effort_default !== undefined) {
+      setReasoningEffortDefault(patch.reasoning_effort_default);
+    }
+    if (patch.temperature_default !== undefined) {
+      setTemperatureDefault(patch.temperature_default);
+    }
+  }
+
+  function selectTarget(nextTargetId: number | null) {
+    if (nextTargetId !== targetId) {
+      setMaxInputTokens("");
+      setReasoningEffortMax(null);
+      setReasoningEffortDefault(null);
+      setTemperatureDefault(null);
+    }
+    setTargetId(nextTargetId);
+  }
 
   async function save() {
-    if (!name.trim() || targetId === null) return;
+    if (!name.trim() || targetId === null || !contextIsValid) return;
     setSaving(true);
     try {
       await saveVirtualModelProfile(
         {
           name: name.trim(),
           target_model_configuration_id: targetId,
+          max_input_tokens: contextOverride,
+          reasoning_effort_max: reasoningEffortMax,
+          reasoning_effort_default: reasoningEffortDefault,
+          temperature_default: temperatureDefault,
         },
         profile?.model_configuration_id
       );
@@ -87,7 +156,9 @@ function ProfileFormModal({
       onClose={saving ? undefined : onClose}
       submit={
         <Button
-          disabled={saving || !name.trim() || targetId === null}
+          disabled={
+            saving || !name.trim() || targetId === null || !contextIsValid
+          }
           onClick={() => void save()}
         >
           {t("form.saveButton")}
@@ -109,15 +180,41 @@ function ProfileFormModal({
           <Text font="secondary-action" color="text-03">
             {t("form.targetLabel")}
           </Text>
-          <ModelSelector
-            value={targetId}
-            providerOptions={providers}
-            includeHiddenModels={false}
-            side="bottom"
-            onChange={(option) =>
-              setTargetId(option.modelConfigurationId ?? null)
-            }
+          <div className="flex items-center gap-1">
+            <div className="min-w-0 flex-1">
+              <ModelSelector
+                value={targetId}
+                providerOptions={providers}
+                includeHiddenModels={false}
+                side="bottom"
+                onChange={(option) =>
+                  selectTarget(option.modelConfigurationId ?? null)
+                }
+              />
+            </div>
+            {settingsModel && (
+              <ModelSettingsPopover
+                model={settingsModel}
+                onChange={updateSettings}
+              />
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1">
+          <Text font="secondary-action" color="text-03">
+            {tModelSelector("contextWindow.row.title")}
+          </Text>
+          <InputTypeIn
+            value={maxInputTokens}
+            onChange={(event) => setMaxInputTokens(event.target.value)}
+            placeholder={targetModel?.max_input_tokens?.toString() ?? ""}
+            type="number"
+            min={1}
+            max={targetModel?.max_input_tokens ?? undefined}
           />
+          <Text font="secondary-body" color="text-02">
+            {tModelSelector("contextWindow.row.caption")}
+          </Text>
         </div>
       </Section>
     </ConfirmationModalLayout>

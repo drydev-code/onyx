@@ -27,7 +27,12 @@ from onyx.llm.claude_code_cli import (
     _messages_to_prompt,
 )
 from onyx.llm.model_response import ModelResponse, ModelResponseStream
-from onyx.llm.models import AssistantMessage, SystemMessage, UserMessage
+from onyx.llm.models import (
+    AssistantMessage,
+    ReasoningEffort,
+    SystemMessage,
+    UserMessage,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -97,6 +102,24 @@ def test_invoke_command_isolates_host_tools_and_settings(
     assert cmd[cmd.index("--setting-sources") + 1] == ""
     assert "--disable-slash-commands" in cmd
     assert "--no-session-persistence" in cmd
+
+
+@patch("onyx.llm.claude_code_cli.subprocess.run")
+@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value=None)
+def test_invoke_passes_resolved_reasoning_effort(
+    _mock_mcp: MagicMock, mock_run: MagicMock
+) -> None:
+    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+    cli = ClaudeCodeCLI(
+        model_name="claude-opus-4-8",
+        api_key="test-key",
+        reasoning_effort_default=ReasoningEffort.MAX,
+    )
+
+    cli.invoke([UserMessage(content="hello")])
+
+    cmd = mock_run.call_args[0][0]
+    assert cmd[cmd.index("--effort") + 1] == "max"
 
 
 @patch("onyx.llm.claude_code_cli.subprocess.run")

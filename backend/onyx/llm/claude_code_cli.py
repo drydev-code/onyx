@@ -42,7 +42,11 @@ from onyx.llm.model_response import (
     StreamingChoice,
     Usage,
 )
-from onyx.llm.models import ReasoningEffort, ToolChoiceOptions
+from onyx.llm.models import (
+    ReasoningEffort,
+    ToolChoiceOptions,
+    resolve_reasoning_effort,
+)
 from onyx.llm.well_known_providers.constants import (
     CLAUDE_CODE_AUTH_MODE_KEY,
     CLAUDE_CODE_CLI_PATH_KEY,
@@ -201,8 +205,7 @@ class ClaudeCodeCLI(LLM):
         that breaks downstream JSON parsing, so we fail fast instead.
 
     reasoning_effort:
-        Silently ignored (no warning). This parameter is an advisory hint,
-        not a requirement. Dropping it has no functional impact.
+        Passed to the CLI with ``--effort`` after defaults and caps resolve.
 
     user_identity:
         Silently ignored (no warning). This is metadata used for logging
@@ -217,6 +220,9 @@ class ClaudeCodeCLI(LLM):
         custom_config: dict[str, str] | None = None,
         timeout: int | None = None,
         max_input_tokens: int = 200000,
+        reasoning_effort_default: ReasoningEffort | None = None,
+        reasoning_effort_user_default: ReasoningEffort | None = None,
+        reasoning_effort_max: ReasoningEffort | None = None,
     ):
         self._model_name = model_name
         self._api_key = api_key
@@ -226,6 +232,9 @@ class ClaudeCodeCLI(LLM):
         self._custom_config = custom_config or {}
         self._timeout = timeout or _DEFAULT_TIMEOUT
         self._max_input_tokens = max_input_tokens
+        self._reasoning_effort_default = reasoning_effort_default
+        self._reasoning_effort_user_default = reasoning_effort_user_default
+        self._reasoning_effort_max = reasoning_effort_max
         self._cli_path = self._custom_config.get(
             CLAUDE_CODE_CLI_PATH_KEY, _DEFAULT_CLI_PATH
         )
@@ -373,6 +382,19 @@ class ClaudeCodeCLI(LLM):
             "",
         ]
 
+    def _add_reasoning_effort(self, cmd: list[str], requested: ReasoningEffort) -> None:
+        effort = resolve_reasoning_effort(
+            requested,
+            default=self._reasoning_effort_default,
+            user_default=self._reasoning_effort_user_default,
+            maximum=self._reasoning_effort_max,
+        )
+        if effort in (ReasoningEffort.AUTO, ReasoningEffort.OFF):
+            return
+        if effort is ReasoningEffort.ULTRA:
+            effort = ReasoningEffort.MAX
+        cmd.extend(["--effort", effort.value])
+
     @staticmethod
     def _add_mcp_arguments(cmd: list[str], mcp_config_path: str | None) -> None:
         """Add the isolated MCP config and allow only Onyx's read tools."""
@@ -396,6 +418,9 @@ class ClaudeCodeCLI(LLM):
             temperature=self._temperature,
             custom_config=self._custom_config,
             max_input_tokens=self._max_input_tokens,
+            reasoning_effort_default=self._reasoning_effort_default,
+            reasoning_effort_user_default=self._reasoning_effort_user_default,
+            reasoning_effort_max=self._reasoning_effort_max,
             cli_tool_bridge=_CLAUDE_CODE_TOOL_BRIDGE or None,
         )
 
@@ -410,7 +435,7 @@ class ClaudeCodeCLI(LLM):
         reasoning_effort: ReasoningEffort = ReasoningEffort.AUTO,
         user_identity: LLMUserIdentity | None = None,
     ) -> ModelResponse:
-        _ = (tool_choice, max_tokens, reasoning_effort, user_identity)
+        _ = (tool_choice, max_tokens, user_identity)
         if tools:
             logger.warning(
                 "Claude Code CLI does not support tool calling. "
@@ -427,6 +452,7 @@ class ClaudeCodeCLI(LLM):
         timeout = timeout_override or self._timeout
 
         cmd = self._build_base_command()
+        self._add_reasoning_effort(cmd, reasoning_effort)
         cmd.extend(
             [
                 "--output-format",
@@ -569,7 +595,7 @@ class ClaudeCodeCLI(LLM):
         reasoning_effort: ReasoningEffort = ReasoningEffort.AUTO,
         user_identity: LLMUserIdentity | None = None,
     ) -> Iterator[ModelResponseStream]:
-        _ = (tool_choice, max_tokens, reasoning_effort, user_identity)
+        _ = (tool_choice, max_tokens, user_identity)
         if tools:
             logger.warning(
                 "Claude Code CLI does not support tool calling. "
@@ -588,6 +614,7 @@ class ClaudeCodeCLI(LLM):
         created = str(int(time.time()))
 
         cmd = self._build_base_command()
+        self._add_reasoning_effort(cmd, reasoning_effort)
         cmd.extend(
             [
                 "--verbose",
