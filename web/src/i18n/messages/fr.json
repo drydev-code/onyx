@@ -4340,6 +4340,36 @@
             "providerNameRequired": "Le nom du fournisseur est obligatoire"
           }
         },
+        "codex": {
+          "authentication": {
+            "description": "Connectez-vous avec votre compte ChatGPT ou saisissez une clé API OpenAI ci-dessous.",
+            "title": "Authentification"
+          },
+          "authorized": {
+            "message": "Authentification avec ChatGPT réussie."
+          },
+          "errors": {
+            "expired": "Le code de l’appareil a expiré. Veuillez réessayer.",
+            "missingAccessToken": "La réponse d’autorisation ne contient aucun jeton d’accès.",
+            "pollFailed": "Impossible de vérifier l’état de l’autorisation.",
+            "startFailed": "Impossible de démarrer l’autorisation de l’appareil.",
+            "unknown": "Une erreur d’autorisation inconnue s’est produite."
+          },
+          "pending": {
+            "codePrompt": "Saisissez ce code :",
+            "instructions": "Ouvrez la page d’autorisation dans un nouvel onglet :",
+            "waiting": "En attente de l’autorisation..."
+          },
+          "signInButton": {
+            "label": "Se connecter avec ChatGPT"
+          },
+          "tryAgainButton": {
+            "label": "Réessayer"
+          },
+          "validation": {
+            "authenticationRequired": "Connectez-vous avec ChatGPT ou fournissez une clé API OpenAI."
+          }
+        },
         "liteLlmProxy": {
           "apiBaseField": {
             "description": "L'URL de base de votre serveur LiteLLM Proxy."

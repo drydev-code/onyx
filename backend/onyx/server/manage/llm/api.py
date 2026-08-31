@@ -2383,7 +2383,19 @@ def initiate_codex_device_auth(
     """Initiate OpenAI Codex device code authorization flow."""
     from onyx.server.manage.llm.codex_oauth import initiate_device_auth
 
-    auth = initiate_device_auth()
+    try:
+        auth = initiate_device_auth()
+    except httpx.HTTPStatusError as error:
+        raise OnyxError(
+            OnyxErrorCode.BAD_GATEWAY,
+            "OpenAI rejected the device authorization request.",
+            status_code_override=error.response.status_code,
+        ) from error
+    except httpx.HTTPError as error:
+        raise OnyxError(
+            OnyxErrorCode.BAD_GATEWAY,
+            "Could not reach OpenAI's authorization service.",
+        ) from error
     return CodexDeviceAuthResponse(
         device_code=auth.device_auth_id,
         user_code=auth.user_code,
@@ -2414,6 +2426,17 @@ def poll_codex_device_auth(
         )
     except ValueError as e:
         return CodexPollResponse(status="error", error=str(e))
+    except httpx.HTTPStatusError as error:
+        raise OnyxError(
+            OnyxErrorCode.BAD_GATEWAY,
+            "OpenAI rejected the device authorization poll.",
+            status_code_override=error.response.status_code,
+        ) from error
+    except httpx.HTTPError as error:
+        raise OnyxError(
+            OnyxErrorCode.BAD_GATEWAY,
+            "Could not reach OpenAI's authorization service.",
+        ) from error
 
 
 class ClaudeCLISetupTokenRequest(BaseModel):

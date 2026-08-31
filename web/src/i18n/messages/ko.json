@@ -4340,6 +4340,36 @@
             "providerNameRequired": "제공자 이름은 필수입니다"
           }
         },
+        "codex": {
+          "authentication": {
+            "description": "ChatGPT 계정으로 로그인하거나 아래에 OpenAI API 키를 입력하세요.",
+            "title": "인증"
+          },
+          "authorized": {
+            "message": "ChatGPT 인증에 성공했습니다."
+          },
+          "errors": {
+            "expired": "기기 코드가 만료되었습니다. 다시 시도하세요.",
+            "missingAccessToken": "인증 응답에 액세스 토큰이 없습니다.",
+            "pollFailed": "인증 상태를 확인하지 못했습니다.",
+            "startFailed": "기기 인증을 시작하지 못했습니다.",
+            "unknown": "알 수 없는 인증 오류가 발생했습니다."
+          },
+          "pending": {
+            "codePrompt": "다음 코드를 입력하세요:",
+            "instructions": "새 탭에서 인증 페이지를 여세요:",
+            "waiting": "인증을 기다리는 중..."
+          },
+          "signInButton": {
+            "label": "ChatGPT로 로그인"
+          },
+          "tryAgainButton": {
+            "label": "다시 시도"
+          },
+          "validation": {
+            "authenticationRequired": "ChatGPT로 로그인하거나 OpenAI API 키를 입력하세요."
+          }
+        },
         "liteLlmProxy": {
           "apiBaseField": {
             "description": "LiteLLM Proxy 서버의 기본 URL입니다."

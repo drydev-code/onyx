@@ -4340,6 +4340,36 @@
             "providerNameRequired": "Provider Name is required"
           }
         },
+        "codex": {
+          "authentication": {
+            "description": "Sign in with your ChatGPT account, or provide an OpenAI API key below.",
+            "title": "Authentication"
+          },
+          "authorized": {
+            "message": "Successfully authenticated with ChatGPT."
+          },
+          "errors": {
+            "expired": "The device code expired. Please try again.",
+            "missingAccessToken": "The authorization response did not include an access token.",
+            "pollFailed": "Failed to check the authorization status.",
+            "startFailed": "Failed to start device authorization.",
+            "unknown": "An unknown authorization error occurred."
+          },
+          "pending": {
+            "codePrompt": "Enter this code:",
+            "instructions": "Open the authorization page in a new tab:",
+            "waiting": "Waiting for authorization..."
+          },
+          "signInButton": {
+            "label": "Sign in with ChatGPT"
+          },
+          "tryAgainButton": {
+            "label": "Try Again"
+          },
+          "validation": {
+            "authenticationRequired": "Sign in with ChatGPT or provide an OpenAI API key."
+          }
+        },
         "liteLlmProxy": {
           "apiBaseField": {
             "description": "The base URL for your LiteLLM Proxy server."

@@ -4340,6 +4340,36 @@
             "providerNameRequired": "提供商名称为必填项"
           }
         },
+        "codex": {
+          "authentication": {
+            "description": "使用 ChatGPT 帐户登录，或在下方提供 OpenAI API 密钥。",
+            "title": "身份验证"
+          },
+          "authorized": {
+            "message": "已成功通过 ChatGPT 完成身份验证。"
+          },
+          "errors": {
+            "expired": "设备代码已过期，请重试。",
+            "missingAccessToken": "授权响应中没有访问令牌。",
+            "pollFailed": "无法检查授权状态。",
+            "startFailed": "无法启动设备授权。",
+            "unknown": "发生未知授权错误。"
+          },
+          "pending": {
+            "codePrompt": "请输入此代码：",
+            "instructions": "在新标签页中打开授权页面：",
+            "waiting": "正在等待授权..."
+          },
+          "signInButton": {
+            "label": "使用 ChatGPT 登录"
+          },
+          "tryAgainButton": {
+            "label": "重试"
+          },
+          "validation": {
+            "authenticationRequired": "请使用 ChatGPT 登录或提供 OpenAI API 密钥。"
+          }
+        },
         "liteLlmProxy": {
           "apiBaseField": {
             "description": "您的 LiteLLM Proxy 服务器的基础 URL。"

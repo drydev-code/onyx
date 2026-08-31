@@ -4340,6 +4340,36 @@
             "providerNameRequired": "プロバイダー名は必須です"
           }
         },
+        "codex": {
+          "authentication": {
+            "description": "ChatGPT アカウントでサインインするか、下に OpenAI API キーを入力してください。",
+            "title": "認証"
+          },
+          "authorized": {
+            "message": "ChatGPT での認証に成功しました。"
+          },
+          "errors": {
+            "expired": "デバイスコードの有効期限が切れました。もう一度お試しください。",
+            "missingAccessToken": "認証レスポンスにアクセストークンが含まれていません。",
+            "pollFailed": "認証ステータスを確認できませんでした。",
+            "startFailed": "デバイス認証を開始できませんでした。",
+            "unknown": "不明な認証エラーが発生しました。"
+          },
+          "pending": {
+            "codePrompt": "次のコードを入力してください：",
+            "instructions": "新しいタブで認証ページを開いてください：",
+            "waiting": "認証を待っています..."
+          },
+          "signInButton": {
+            "label": "ChatGPT でサインイン"
+          },
+          "tryAgainButton": {
+            "label": "もう一度試す"
+          },
+          "validation": {
+            "authenticationRequired": "ChatGPT でサインインするか、OpenAI API キーを入力してください。"
+          }
+        },
         "liteLlmProxy": {
           "apiBaseField": {
             "description": "LiteLLM Proxy サーバーのベース URL です。"

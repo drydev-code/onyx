@@ -57,6 +57,13 @@ RUN uv pip install --system --no-cache-dir --no-deps --require-hashes \
 ####################################################################################################
 FROM ${BASE_IMAGE_REGISTRY}/library/python:3.13-slim@sha256:b04b5d7233d2ad9c379e22ea8927cd1378cd15c60d4ef876c065b25ea8fb3bf3 AS runtime
 
+# CLI providers are opt-in because Node.js and the provider binaries add
+# substantial size to the runtime image.
+ARG ENABLE_CLI_PROVIDERS=false
+ARG CLAUDE_CODE_CLI_VERSION=latest
+ARG CODEX_CLI_VERSION=latest
+ENV ENABLE_CLI_PROVIDERS=${ENABLE_CLI_PROVIDERS}
+
 LABEL com.danswer.maintainer="founders@onyx.app"
 LABEL com.danswer.description="This image is the web/frontend container of Onyx which \
 contains code for both the Community and Enterprise editions of Onyx. If you do not \
@@ -94,6 +101,27 @@ RUN apt-get update && \
         libjemalloc2 \
         libxmlsec1-openssl \
         && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+
+# Install the provider CLIs only for images that enable them. curl and gnupg
+# are build-only helpers and are removed after the NodeSource repository and
+# npm packages have been installed.
+RUN if [ "$ENABLE_CLI_PROVIDERS" = "true" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends curl gnupg && \
+        curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+        apt-get install -y --no-install-recommends nodejs && \
+        npm install -g --no-fund --no-audit \
+            "@anthropic-ai/claude-code@${CLAUDE_CODE_CLI_VERSION}" \
+            "@openai/codex@${CODEX_CLI_VERSION}" && \
+        claude --version && \
+        codex --version && \
+        mkdir -p /home/onyx/.claude /home/onyx/.codex && \
+        chown -R onyx:onyx /home/onyx/.claude /home/onyx/.codex && \
+        apt-get purge -y curl gnupg && \
+        apt-get autoremove -y; \
+    fi && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get clean
 
@@ -171,7 +199,11 @@ COPY --chown=onyx:onyx ./scripts/supervisord_entrypoint.sh /app/scripts/supervis
 COPY --chown=onyx:onyx ./scripts/reencrypt_secrets.py /app/scripts/reencrypt_secrets.py
 COPY --chown=onyx:onyx ./scripts/rotate_llm_provider_keys.py /app/scripts/rotate_llm_provider_keys.py
 COPY --chown=onyx:onyx ./scripts/seed_dev_license.py /app/scripts/seed_dev_license.py
-RUN chmod +x /app/scripts/supervisord_entrypoint.sh
+COPY --chown=onyx:onyx ./scripts/update_cli_providers.sh /app/scripts/update_cli_providers.sh
+COPY --chown=onyx:onyx ./scripts/docker_entrypoint.sh /app/scripts/docker_entrypoint.sh
+RUN chmod +x /app/scripts/supervisord_entrypoint.sh \
+        /app/scripts/update_cli_providers.sh \
+        /app/scripts/docker_entrypoint.sh
 
 # Put logo in assets
 COPY --chown=onyx:onyx ./assets /app/assets
@@ -191,6 +223,12 @@ ENV LD_PRELOAD=libjemalloc.so.2
 
 # Default command which does nothing
 # This container is used by api server and background which specify their own CMD
+# Refresh the CLI providers, then exec whatever command the deployment supplies.
+# It must be an ENTRYPOINT rather than a hook inside supervisord_entrypoint.sh:
+# some compose files start api_server with uvicorn directly and never reach that
+# script. No-op unless ENABLE_CLI_PROVIDERS=true.
+ENTRYPOINT ["/app/scripts/docker_entrypoint.sh"]
+
 CMD ["tail", "-f", "/dev/null"]
 
 

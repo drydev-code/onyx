@@ -41,6 +41,7 @@ import OpenAICompatibleModal from "@/sections/modals/languageModels/OpenAICompat
 import NebiusTokenfactoryModal from "@/sections/modals/languageModels/NebiusTokenfactoryModal";
 import PortkeyModal from "@/sections/modals/languageModels/PortkeyModal";
 import ZAIModal from "@/sections/modals/languageModels/ZAIModal";
+import CodexModal from "@/sections/modals/languageModels/CodexModal";
 
 // ─── Text (LLM) providers ────────────────────────────────────────────────────
 
@@ -152,7 +153,7 @@ const PROVIDERS: Record<string, ProviderEntry> = {
     icon: SvgOpenai,
     productName: "OpenAI Codex",
     companyName: "OpenAI",
-    Modal: CustomModal,
+    Modal: CodexModal,
   },
   [LLMProviderName.CLAUDE_CODE_CLI]: {
     icon: SvgClaude,
