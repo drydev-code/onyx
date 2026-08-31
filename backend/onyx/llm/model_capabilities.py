@@ -671,6 +671,33 @@ def supported_reasoning_efforts(
     derive their answer from `resolve_reasoning_param_style`, so a greyed-out
     slider stop and a dropped request parameter should never disagree.
     """
+    if model_provider == "openai_codex":
+        normalized_names = [name.lower() for name in model_names]
+        efforts = [
+            ReasoningEffort.LOW,
+            ReasoningEffort.MEDIUM,
+            ReasoningEffort.HIGH,
+            ReasoningEffort.XHIGH,
+        ]
+        if any(
+            model in name
+            for name in normalized_names
+            for model in ("gpt-5.6-sol", "gpt-5.6-terra")
+        ):
+            efforts.extend([ReasoningEffort.MAX, ReasoningEffort.ULTRA])
+        elif any("gpt-5.6-luna" in name for name in normalized_names):
+            efforts.append(ReasoningEffort.MAX)
+        return efforts
+
+    if model_provider == "claude_code_cli":
+        return [
+            ReasoningEffort.LOW,
+            ReasoningEffort.MEDIUM,
+            ReasoningEffort.HIGH,
+            ReasoningEffort.XHIGH,
+            ReasoningEffort.MAX,
+        ]
+
     if any(
         openai_model_rejects_reasoning_effort(name)
         or openai_chat_variant_rejects_reasoning(name)

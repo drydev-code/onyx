@@ -43,6 +43,9 @@ class ReasoningEffort(str, Enum):
     # Supported by OpenAI and Anthropic adaptive-thinking models (Claude >= 4.7).
     # Other provider mappings clamp it to their highest supported effort.
     XHIGH = "xhigh"
+    # CLI-backed providers can expose levels beyond their public API surface.
+    MAX = "max"
+    ULTRA = "ultra"
 
 
 # Reasoning-effort values a user may pin per chat session. AUTO is excluded
@@ -54,6 +57,8 @@ USER_SELECTABLE_REASONING_EFFORTS: frozenset[ReasoningEffort] = frozenset(
         ReasoningEffort.MEDIUM,
         ReasoningEffort.HIGH,
         ReasoningEffort.XHIGH,
+        ReasoningEffort.MAX,
+        ReasoningEffort.ULTRA,
     }
 )
 
@@ -74,6 +79,8 @@ _REASONING_EFFORT_RANK: dict[ReasoningEffort, int] = {
     ReasoningEffort.MEDIUM: 2,
     ReasoningEffort.HIGH: 3,
     ReasoningEffort.XHIGH: 4,
+    ReasoningEffort.MAX: 5,
+    ReasoningEffort.ULTRA: 6,
 }
 
 
@@ -131,6 +138,8 @@ OPENAI_REASONING_EFFORT: dict[ReasoningEffort, str] = {
     ReasoningEffort.MEDIUM: "medium",
     ReasoningEffort.HIGH: "high",
     ReasoningEffort.XHIGH: "xhigh",
+    ReasoningEffort.MAX: "xhigh",
+    ReasoningEffort.ULTRA: "xhigh",
 }
 
 # Anthropic reasoning effort to budget tokens mapping
@@ -141,6 +150,8 @@ ANTHROPIC_REASONING_EFFORT_BUDGET: dict[ReasoningEffort, int] = {
     ReasoningEffort.MEDIUM: 2048,
     ReasoningEffort.HIGH: 4096,
     ReasoningEffort.XHIGH: 4096,
+    ReasoningEffort.MAX: 4096,
+    ReasoningEffort.ULTRA: 4096,
 }
 
 # Newer Anthropic models (Claude Opus 4.7+) use adaptive thinking with
@@ -151,6 +162,8 @@ ANTHROPIC_ADAPTIVE_REASONING_EFFORT: dict[ReasoningEffort, str] = {
     ReasoningEffort.MEDIUM: "medium",
     ReasoningEffort.HIGH: "high",
     ReasoningEffort.XHIGH: "xhigh",
+    ReasoningEffort.MAX: "xhigh",
+    ReasoningEffort.ULTRA: "xhigh",
 }
 
 

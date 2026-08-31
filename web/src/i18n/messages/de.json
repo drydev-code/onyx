@@ -8321,6 +8321,12 @@
         },
         "xhigh": {
           "label": "Sehr hoch"
+        },
+        "max": {
+          "label": "Max"
+        },
+        "ultra": {
+          "label": "Ultra"
         }
       },
       "searchInput": {
