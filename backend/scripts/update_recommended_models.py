@@ -433,18 +433,24 @@ def build_recommendations(
     today: date,
 ) -> tuple[RecommendedModelsFile, list[str]]:
     warnings: list[str] = []
-    providers = {
-        section_name: build_section(
-            section_name,
-            section,
-            catalog,
-            previous.providers.get(section_name),
-            rules,
-            today,
-            warnings,
-        )
-        for section_name, section in rules.sections.items()
-    }
+    # Only sections named in the rules are generated from OpenRouter. Keep
+    # provider-specific sections (for example CLI and direct-vendor providers)
+    # intact so a catalog refresh cannot silently remove them.
+    providers = dict(previous.providers)
+    providers.update(
+        {
+            section_name: build_section(
+                section_name,
+                section,
+                catalog,
+                previous.providers.get(section_name),
+                rules,
+                today,
+                warnings,
+            )
+            for section_name, section in rules.sections.items()
+        }
+    )
 
     models_changed = set(providers) != set(previous.providers) or any(
         not _sections_equal(new_section, previous.providers[section_name])
@@ -534,7 +540,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.output} is up to date.")
         return 0
     if args.write:
-        args.output.write_text(serialized)
+        args.output.write_text(serialized, newline="\n")
         print(f"Updated {args.output}")
         return 0
     print(f"{args.output} is stale (re-run with --write).", file=sys.stderr)

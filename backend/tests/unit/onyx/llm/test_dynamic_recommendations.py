@@ -9,14 +9,13 @@ from unittest.mock import patch
 
 import pytest
 
+from onyx.llm.well_known_providers.auto_update_models import LLMRecommendations
 from onyx.llm.well_known_providers.dynamic_recommendations import (
     _gemini_display_name,
     _parse_gemini_model,
     apply_dynamic_recommendations,
     compute_latest_gemini_recommendations,
 )
-from onyx.llm.well_known_providers.auto_update_models import LLMRecommendations
-
 
 # ---------------------------------------------------------------------------
 # Parser
@@ -74,7 +73,12 @@ def test_parse_gemini_model_skips_non_chat_variants(name: str) -> None:
     [
         ("gemini-3.1-pro-preview", "pro", "Gemini 3.1 Pro Preview"),
         ("gemini-3-pro-preview", "pro", "Gemini 3 Pro Preview"),
-        ("gemini-3.1-flash-lite-preview", "flash-lite", "Gemini 3.1 Flash Lite Preview"),
+        (
+            "gemini-3.1-flash-lite-preview",
+            "flash-lite",
+            "Gemini 3.1 Flash Lite Preview",
+        ),
+        ("gemini-3.7-flash", "flash", "Gemini 3.7 Flash"),
         ("gemini-2.5-pro", "pro", "Gemini 2.5 Pro"),
         ("gemini-2.5-flash", "flash", "Gemini 2.5 Flash"),
     ],
@@ -98,20 +102,20 @@ def test_compute_latest_picks_highest_version_per_tier() -> None:
         "gemini-3.1-pro-preview",
         "gemini-3-pro-preview",
         "gemini-2.5-pro",
-        "gemini-3-flash-preview",
+        "gemini-3.7-flash",
         "gemini-2.5-flash",
-        "gemini-3.1-flash-lite-preview",
+        "gemini-3.5-flash-lite",
         "gemini-2.5-flash-lite",
     )
     with patch("litellm.model_cost", fake_cost):
         rec = compute_latest_gemini_recommendations()
 
     assert rec is not None
-    assert rec.default_model.name == "gemini-3.1-pro-preview"
+    assert rec.default_model.name == "gemini-3.7-flash"
     additional = {m.name for m in rec.additional_visible_models}
     assert additional == {
-        "gemini-3-flash-preview",  # no 3.1 flash exists, so 3.0 wins
-        "gemini-3.1-flash-lite-preview",
+        "gemini-3.1-pro-preview",
+        "gemini-3.5-flash-lite",
     }
 
 
@@ -127,9 +131,7 @@ def test_compute_latest_handles_gemini_prefixed_keys() -> None:
 
     assert rec is not None
     assert rec.default_model.name == "gemini-3.1-pro-preview"
-    assert {m.name for m in rec.additional_visible_models} == {
-        "gemini-3-flash-preview"
-    }
+    assert {m.name for m in rec.additional_visible_models} == {"gemini-3-flash-preview"}
 
 
 def test_compute_latest_prefers_undated_over_dated_snapshot() -> None:
@@ -143,16 +145,23 @@ def test_compute_latest_prefers_undated_over_dated_snapshot() -> None:
 
     assert rec is not None
     flash_models = [
-        m for m in [rec.default_model] + list(rec.additional_visible_models)
+        m
+        for m in [rec.default_model] + list(rec.additional_visible_models)
         if m.name.startswith("gemini-2.5-flash")
     ]
     assert flash_models[0].name == "gemini-2.5-flash"
 
 
-def test_compute_latest_returns_none_without_pro_model() -> None:
-    """Without a pro tier the recommendation would be lopsided — fall back."""
+def test_compute_latest_accepts_flash_only_catalog() -> None:
     fake_cost = _fake_model_cost("gemini-3-flash-preview")
     with patch("litellm.model_cost", fake_cost):
+        rec = compute_latest_gemini_recommendations()
+    assert rec is not None
+    assert rec.default_model.name == "gemini-3-flash-preview"
+
+
+def test_compute_latest_returns_none_without_chat_models() -> None:
+    with patch("litellm.model_cost", _fake_model_cost("gemini-embedding-001")):
         rec = compute_latest_gemini_recommendations()
     assert rec is None
 
@@ -194,7 +203,13 @@ def test_apply_dynamic_recommendations_overrides_google_ai_studio() -> None:
                 ),
                 additional_visible_models=[],
             ),
-            # Should be left alone — only google_ai_studio is dynamic.
+            "vertex_ai": LLMProviderRecommendation(
+                default_model=SimpleKnownModel(
+                    name="gemini-2.5-pro", display_name="Old Vertex"
+                ),
+                additional_visible_models=[],
+            ),
+            # Non-Gemini providers must be left alone.
             "openai": LLMProviderRecommendation(
                 default_model=SimpleKnownModel(name="gpt-4o", display_name="GPT-4o"),
                 additional_visible_models=[],
@@ -209,6 +224,7 @@ def test_apply_dynamic_recommendations_overrides_google_ai_studio() -> None:
         result.providers["google_ai_studio"].default_model.name
         == "gemini-3.1-pro-preview"
     )
+    assert result.providers["vertex_ai"].default_model.name == "gemini-3.1-pro-preview"
     # OpenAI must be untouched
     assert result.providers["openai"].default_model.name == "gpt-4o"
 
@@ -233,8 +249,8 @@ def test_apply_dynamic_recommendations_falls_back_when_detection_fails() -> None
             ),
         },
     )
-    # No pro models in litellm → detection returns None → bundled is preserved.
-    with patch("litellm.model_cost", _fake_model_cost("gemini-3-flash-preview")):
+    # No chat models in litellm → detection returns None → bundled is preserved.
+    with patch("litellm.model_cost", _fake_model_cost("gemini-embedding-001")):
         result = apply_dynamic_recommendations(bundled)
 
     assert (

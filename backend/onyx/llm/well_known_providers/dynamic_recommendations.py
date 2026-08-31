@@ -1,11 +1,11 @@
 """Auto-detect the latest available models per provider from litellm.
 
-Some providers (notably Google AI Studio) ship new preview models on a
+Some providers (notably Google's Gemini endpoints) ship new models on a
 fast cadence. Hand-maintaining a "recommended" list in the bundled JSON
 quickly goes stale. This module derives the recommended set at runtime
 by parsing version strings out of `litellm.model_cost`.
 
-The current implementation only covers Google AI Studio. Adding more
+The current implementation covers Gemini on Google AI Studio and Vertex AI. Adding more
 providers means writing a new `_compute_latest_<provider>_recommendations`
 helper and registering it in `apply_dynamic_recommendations`.
 """
@@ -14,9 +14,12 @@ import re
 
 from onyx.llm.well_known_providers.auto_update_models import (
     LLMProviderRecommendation,
+    LLMRecommendations,
 )
-from onyx.llm.well_known_providers.auto_update_models import LLMRecommendations
-from onyx.llm.well_known_providers.constants import GOOGLE_AI_STUDIO_PROVIDER_NAME
+from onyx.llm.well_known_providers.constants import (
+    GOOGLE_AI_STUDIO_PROVIDER_NAME,
+    VERTEXAI_PROVIDER_NAME,
+)
 from onyx.llm.well_known_providers.models import SimpleKnownModel
 from onyx.utils.logger import setup_logger
 
@@ -126,9 +129,10 @@ def _gemini_display_name(model_name: str, tier: str) -> str:
 def compute_latest_gemini_recommendations() -> LLMProviderRecommendation | None:
     """Pick the newest Gemini model per tier from litellm.model_cost.
 
-    Returns a recommendation with `pro` as the default and `flash` /
-    `flash-lite` as additional visible models. Returns None when no usable
-    model is found (so callers can fall back to the bundled JSON).
+    The newest release across all tiers is the default. Other tier leaders
+    remain visible so admins can choose a different capability/cost profile.
+    Returns None when no usable model is found so callers can use the bundled
+    fallback.
     """
     try:
         import litellm
@@ -162,22 +166,38 @@ def compute_latest_gemini_recommendations() -> LLMProviderRecommendation | None:
         tier, version, priority = parsed
         candidates[tier].append((version, priority, name))
 
-    latest: dict[str, str] = {}
+    latest: dict[str, tuple[tuple[int, int], int, str]] = {}
     for tier, items in candidates.items():
         if not items:
             continue
         # Highest version, then highest priority, then alphabetical for stability.
         items.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
-        latest[tier] = items[0][2]
+        latest[tier] = items[0]
 
-    if "pro" not in latest:
-        # Without a pro model the result would be confusing — fall back.
+    if not latest:
         return None
 
+    # Prefer the highest released version. On a version tie, Pro wins over
+    # Flash, then Flash Lite.
+    tier_priority = {"pro": 2, "flash": 1, "flash-lite": 0}
+    default_tier = max(
+        latest,
+        key=lambda tier: (
+            latest[tier][0],
+            latest[tier][1],
+            tier_priority[tier],
+        ),
+    )
+
     visible: list[SimpleKnownModel] = []
-    for tier in ("pro", "flash", "flash-lite"):
-        name = latest.get(tier)
-        if name:
+    tier_order = [
+        default_tier,
+        *(tier for tier in ("pro", "flash", "flash-lite") if tier != default_tier),
+    ]
+    for tier in tier_order:
+        model = latest.get(tier)
+        if model:
+            name = model[2]
             visible.append(
                 SimpleKnownModel(
                     name=name,
@@ -201,15 +221,18 @@ def apply_dynamic_recommendations(
 ) -> LLMRecommendations:
     """Override applicable provider entries with dynamically-detected ones.
 
-    Currently only `google_ai_studio` is dynamic. The bundled JSON entry is
-    used as a fallback when detection fails.
+    Google AI Studio and Vertex AI expose the same Gemini model IDs, so both
+    recommendation sections track the newest detected tier leaders. Bundled
+    JSON entries are used as fallbacks when detection fails.
     """
     dynamic_gemini = compute_latest_gemini_recommendations()
     if dynamic_gemini is None:
         return recommendations
 
     new_providers = dict(recommendations.providers)
-    new_providers[GOOGLE_AI_STUDIO_PROVIDER_NAME] = dynamic_gemini
+    for provider_name in (GOOGLE_AI_STUDIO_PROVIDER_NAME, VERTEXAI_PROVIDER_NAME):
+        if provider_name in new_providers:
+            new_providers[provider_name] = dynamic_gemini
     logger.info(
         "Dynamic Gemini recommendation: default=%s, visible=%s",
         dynamic_gemini.default_model.name,

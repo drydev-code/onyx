@@ -172,7 +172,15 @@ def test_litellm_openai_codex_without_access_token_keeps_api_key() -> None:
 def test_get_zai_model_names_returns_expected_models() -> None:
     """get_zai_model_names should return the static GLM model list."""
     models = get_zai_model_names()
-    assert models == ["glm-5.1", "glm-5-turbo", "glm-5v-turbo"]
+    assert models == [
+        "glm-5.1",
+        "glm-5",
+        "glm-5-turbo",
+        "glm-5v-turbo",
+        "glm-4.7",
+        "glm-4.7-flashx",
+        "glm-4.7-flash",
+    ]
 
 
 def test_get_claude_code_cli_model_names_are_all_claude_models() -> None:
@@ -186,6 +194,8 @@ def test_get_claude_code_cli_model_names_are_all_claude_models() -> None:
 def test_get_claude_code_cli_model_names_contains_expected_models() -> None:
     """get_claude_code_cli_model_names should contain the expected model names."""
     models = get_claude_code_cli_model_names()
+    assert "claude-opus-5" in models
+    assert "claude-fable-5" in models
     assert "claude-opus-4-8" in models
     assert "claude-sonnet-5" in models
     assert "claude-opus-4-6" in models
@@ -195,24 +205,26 @@ def test_get_claude_code_cli_model_names_contains_expected_models() -> None:
 
 def test_get_claude_code_cli_default_is_newest_model() -> None:
     """The first entry is what the UI offers as the default; keep it newest."""
-    assert get_claude_code_cli_model_names()[0] == "claude-opus-4-8"
+    assert get_claude_code_cli_model_names()[0] == "claude-opus-5"
 
 
-def test_get_openai_codex_model_names_returns_six_models() -> None:
-    """get_openai_codex_model_names should return exactly 6 models."""
+def test_get_openai_codex_model_names_returns_current_models() -> None:
+    """get_openai_codex_model_names should return the current CLI model set."""
     models = get_openai_codex_model_names()
-    assert len(models) == 6
+    assert len(models) == 7
 
 
 def test_get_openai_codex_model_names_contains_expected_models() -> None:
     """get_openai_codex_model_names should contain the expected model names."""
     models = get_openai_codex_model_names()
     expected = {
-        "gpt-5.5-codex",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
         "gpt-5.5",
-        "gpt-5.5-codex-mini",
-        "gpt-5.1-codex",
-        "gpt-5.1",
-        "gpt-5.1-codex-mini",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.3-codex-spark",
     }
     assert set(models) == expected
+    assert models[0] == "gpt-5.6-sol"

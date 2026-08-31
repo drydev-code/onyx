@@ -54,6 +54,27 @@
           "is_default_source": true
         },
         {
+          "label": "opus-4.8",
+          "vendor_prefix": "anthropic/",
+          "include_regex": "^anthropic/claude-opus-4\\.8$",
+          "exclude_regex": null,
+          "is_default_source": false
+        },
+        {
+          "label": "opus-4.7",
+          "vendor_prefix": "anthropic/",
+          "include_regex": "^anthropic/claude-opus-4\\.7$",
+          "exclude_regex": null,
+          "is_default_source": false
+        },
+        {
+          "label": "opus-4.6",
+          "vendor_prefix": "anthropic/",
+          "include_regex": "^anthropic/claude-opus-4\\.6$",
+          "exclude_regex": null,
+          "is_default_source": false
+        },
+        {
           "label": "fable",
           "vendor_prefix": "anthropic/",
           "include_regex": "^anthropic/claude-fable-\\d+(\\.\\d+)?$",
@@ -65,6 +86,13 @@
           "vendor_prefix": "anthropic/",
           "include_regex": "^anthropic/claude-sonnet-\\d+(\\.\\d+)?$",
           "exclude_regex": "-(fast|thinking)",
+          "is_default_source": false
+        },
+        {
+          "label": "sonnet-4.6",
+          "vendor_prefix": "anthropic/",
+          "include_regex": "^anthropic/claude-sonnet-4\\.6$",
+          "exclude_regex": null,
           "is_default_source": false
         },
         {
@@ -91,13 +119,20 @@
           "vendor_prefix": "google/",
           "include_regex": "^google/gemini-\\d+(\\.\\d+)?-pro(-preview)?$",
           "exclude_regex": "-(lite|image|audio|tts|customtools)",
-          "is_default_source": true
+          "is_default_source": false
         },
         {
           "label": "gemini-flash",
           "vendor_prefix": "google/",
           "include_regex": "^google/gemini-\\d+(\\.\\d+)?-flash(-preview)?$",
           "exclude_regex": "-(lite|image|audio|tts|customtools)",
+          "is_default_source": true
+        },
+        {
+          "label": "gemini-flash-lite",
+          "vendor_prefix": "google/",
+          "include_regex": "^google/gemini-\\d+(\\.\\d+)?-flash-lite(-preview)?$",
+          "exclude_regex": "-(image|audio|tts|customtools)",
           "is_default_source": false
         }
       ]

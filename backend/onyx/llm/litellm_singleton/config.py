@@ -167,30 +167,66 @@ def register_zai_models() -> None:
     """
     zai_models = {
         "glm-5.1": {
-            "max_tokens": 16384,
-            "max_input_tokens": 128000,
-            "max_output_tokens": 16384,
+            "max_tokens": 131072,
+            "max_input_tokens": 200000,
+            "max_output_tokens": 131072,
+            "supports_function_calling": True,
+            "supports_vision": False,
+            "supports_reasoning": True,
+            "litellm_provider": "openai",
+        },
+        "glm-5": {
+            "max_tokens": 131072,
+            "max_input_tokens": 200000,
+            "max_output_tokens": 131072,
+            "supports_function_calling": True,
+            "supports_vision": False,
+            "supports_reasoning": True,
+            "litellm_provider": "openai",
+        },
+        "glm-5-turbo": {
+            "max_tokens": 131072,
+            "max_input_tokens": 200000,
+            "max_output_tokens": 131072,
+            "supports_function_calling": True,
+            "supports_vision": False,
+            "supports_reasoning": True,
+            "litellm_provider": "openai",
+        },
+        "glm-5v-turbo": {
+            "max_tokens": 131072,
+            "max_input_tokens": 200000,
+            "max_output_tokens": 131072,
             "supports_function_calling": True,
             "supports_vision": True,
             "supports_reasoning": True,
             "litellm_provider": "openai",
         },
-        "glm-5-turbo": {
-            "max_tokens": 16384,
-            "max_input_tokens": 128000,
-            "max_output_tokens": 16384,
+        "glm-4.7": {
+            "max_tokens": 131072,
+            "max_input_tokens": 200000,
+            "max_output_tokens": 131072,
             "supports_function_calling": True,
             "supports_vision": False,
-            "supports_reasoning": False,
+            "supports_reasoning": True,
             "litellm_provider": "openai",
         },
-        "glm-5v-turbo": {
-            "max_tokens": 16384,
-            "max_input_tokens": 128000,
-            "max_output_tokens": 16384,
+        "glm-4.7-flashx": {
+            "max_tokens": 131072,
+            "max_input_tokens": 200000,
+            "max_output_tokens": 131072,
             "supports_function_calling": True,
-            "supports_vision": True,
-            "supports_reasoning": False,
+            "supports_vision": False,
+            "supports_reasoning": True,
+            "litellm_provider": "openai",
+        },
+        "glm-4.7-flash": {
+            "max_tokens": 131072,
+            "max_input_tokens": 200000,
+            "max_output_tokens": 131072,
+            "supports_function_calling": True,
+            "supports_vision": False,
+            "supports_reasoning": True,
             "litellm_provider": "openai",
         },
     }
@@ -215,39 +251,34 @@ def register_claude_code_cli_models() -> None:
     These models are NOT routed through LiteLLM (they use subprocess),
     but registering them here ensures correct token limit lookups.
     """
-    cli_models = {
-        "claude-opus-4-6": {
-            "max_tokens": 32000,
-            "max_input_tokens": 200000,
-            "max_output_tokens": 32000,
-            "supports_function_calling": True,
-            "supports_vision": True,
-            "supports_reasoning": True,
-            "litellm_provider": "anthropic",
-        },
-        "claude-sonnet-4-6": {
-            "max_tokens": 16384,
-            "max_input_tokens": 200000,
-            "max_output_tokens": 16384,
-            "supports_function_calling": True,
-            "supports_vision": True,
-            "supports_reasoning": True,
-            "litellm_provider": "anthropic",
-        },
-        "claude-haiku-4-5": {
-            "max_tokens": 8192,
-            "max_input_tokens": 200000,
-            "max_output_tokens": 8192,
-            "supports_function_calling": True,
-            "supports_vision": True,
-            "supports_reasoning": False,
-            "litellm_provider": "anthropic",
-        },
+    cli_models = (
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-sonnet-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+    )
+    fallback_info = {
+        "max_tokens": 64000,
+        "max_input_tokens": 200000,
+        "max_output_tokens": 64000,
+        "supports_function_calling": True,
+        "supports_vision": True,
+        "supports_reasoning": True,
+        "litellm_provider": "anthropic",
     }
 
-    for model_name, info in cli_models.items():
+    for model_name in cli_models:
+        info = dict(
+            litellm.model_cost.get(model_name)
+            or litellm.model_cost.get(f"anthropic/{model_name}")
+            or fallback_info
+        )
         for prefix in ["", "claude_code_cli/", "anthropic/"]:
-            litellm.model_cost[f"{prefix}{model_name}"] = info
+            litellm.model_cost[f"{prefix}{model_name}"] = dict(info)
 
 
 def initialize_litellm() -> None:
