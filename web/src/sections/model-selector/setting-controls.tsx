@@ -20,6 +20,8 @@ const BASE_REASONING_STOPS: ReasoningEffortOverride[] = [
 export const ALL_REASONING_STOPS: ReasoningEffortOverride[] = [
   ...BASE_REASONING_STOPS,
   "xhigh",
+  "max",
+  "ultra",
 ];
 
 /** Message keys under the `chat.modelSelector` namespace, one per stop. */
@@ -29,6 +31,8 @@ export const REASONING_STOP_LABEL_KEYS = {
   medium: "reasoningLevel.medium.label",
   high: "reasoningLevel.high.label",
   xhigh: "reasoningLevel.xhigh.label",
+  max: "reasoningLevel.max.label",
+  ultra: "reasoningLevel.ultra.label",
 } as const satisfies Record<ReasoningEffortOverride, string>;
 
 /** Where an unset reasoning setting parks: the backend resolves AUTO to medium. */

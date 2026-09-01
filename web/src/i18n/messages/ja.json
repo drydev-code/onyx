@@ -8321,6 +8321,12 @@
         },
         "xhigh": {
           "label": "最高"
+        },
+        "max": {
+          "label": "最大"
+        },
+        "ultra": {
+          "label": "ウルトラ"
         }
       },
       "searchInput": {

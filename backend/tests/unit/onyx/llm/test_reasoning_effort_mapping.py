@@ -36,6 +36,8 @@ def test_openai_reasoning_effort_mapping_covers_all_effort_levels() -> None:
         ReasoningEffort.MEDIUM,
         ReasoningEffort.HIGH,
         ReasoningEffort.XHIGH,
+        ReasoningEffort.MAX,
+        ReasoningEffort.ULTRA,
     }
 
     mapped_effort_levels = set(OPENAI_REASONING_EFFORT.keys())

@@ -8321,6 +8321,12 @@
         },
         "xhigh": {
           "label": "매우 높음"
+        },
+        "max": {
+          "label": "최대"
+        },
+        "ultra": {
+          "label": "울트라"
         }
       },
       "searchInput": {
