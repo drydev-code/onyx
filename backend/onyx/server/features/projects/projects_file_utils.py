@@ -11,6 +11,7 @@ from onyx.configs.app_configs import (
 )
 from onyx.configs.llm_configs import get_image_extraction_and_analysis_enabled
 from onyx.db.llm import fetch_default_llm_model
+from onyx.db.virtual_llm import resolve_virtual_model_target
 from onyx.file_processing.extract_file_text import (
     count_docx_embedded_images,
     extract_file_text,
@@ -174,7 +175,9 @@ def categorize_uploaded_files(
     """
 
     results = CategorizedFiles()
-    default_model = fetch_default_llm_model(db_session)
+    default_model = resolve_virtual_model_target(
+        db_session, fetch_default_llm_model(db_session)
+    )
 
     model_name = default_model.name if default_model else None
     provider_type = default_model.llm_provider.provider if default_model else None

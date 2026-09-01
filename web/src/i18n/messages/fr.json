@@ -4147,6 +4147,43 @@
           "title": "Auto-hébergés et personnalisés"
         }
       },
+      "virtualProfiles": {
+        "addButton": "Ajouter un profil",
+        "defaultTag": "Par défaut",
+        "deleteAria": "Supprimer {name}",
+        "deleteModal": {
+          "description": "Les utilisateurs ne pourront plus sélectionner ce profil.",
+          "submit": "Supprimer",
+          "title": "Supprimer {name}"
+        },
+        "disabledDescription": "Les utilisateurs sélectionnent directement les modèles des fournisseurs. Ajoutez des profils, puis activez les profils gérés.",
+        "editAria": "Modifier {name}",
+        "emptyDescription": "Ajoutez un nom simple et associez-le à un modèle de fournisseur configuré.",
+        "enabledDescription": "Tous les utilisateurs voient uniquement ces noms de profil. Onyx résout chaque profil vers sa cible actuelle.",
+        "form": {
+          "createTitle": "Ajouter un profil de modèle",
+          "editTitle": "Modifier le profil de modèle",
+          "nameLabel": "Nom du profil",
+          "namePlaceholder": "Agent normal",
+          "saveButton": "Enregistrer",
+          "targetLabel": "Acheminer vers"
+        },
+        "listTitle": "Profils de modèle",
+        "routesTo": "Acheminé vers {provider} · {model}",
+        "setDefaultButton": "Définir par défaut",
+        "title": "Profils de modèle gérés",
+        "toasts": {
+          "defaultFailed": "Impossible de mettre à jour le profil par défaut.",
+          "defaultUpdated": "Profil par défaut mis à jour.",
+          "deleteFailed": "Impossible de supprimer le profil.",
+          "deleted": "Profil de modèle supprimé.",
+          "disabled": "Profils de modèle gérés désactivés.",
+          "enabled": "Profils de modèle gérés activés.",
+          "saveFailed": "Impossible d’enregistrer le profil.",
+          "saved": "Profil de modèle enregistré.",
+          "toggleFailed": "Impossible de modifier les profils de modèle gérés."
+        }
+      },
       "modals": {
         "access": {
           "admin": {

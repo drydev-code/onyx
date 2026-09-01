@@ -33,6 +33,7 @@ class LlmProviderNames(str, Enum):
     GOOGLE_AI_STUDIO = "google_ai_studio"
     OPENAI_CODEX = "openai_codex"
     CLAUDE_CODE_CLI = "claude_code_cli"
+    ONYX_VIRTUAL = "onyx_virtual"
 
     def __str__(self) -> str:
         """Needed so things like:
@@ -40,6 +41,9 @@ class LlmProviderNames(str, Enum):
         f"{LlmProviderNames.OPENAI}/" gives back "openai/" instead of "LlmProviderNames.OPENAI/"
         """
         return self.value
+
+
+VIRTUAL_LLM_PROVIDER_NAME = "Model Profiles"
 
 
 WELL_KNOWN_PROVIDER_NAMES = [
