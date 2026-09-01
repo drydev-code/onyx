@@ -438,12 +438,11 @@ class CodexCLI(LLM):
         cmd = [
             self._cli_path,
             "exec",
-            "--sandbox",
-            "read-only",
+            # The Onyx container is the external sandbox. A nested Codex
+            # sandbox requires Linux user namespaces that Docker blocks.
+            "--dangerously-bypass-approvals-and-sandbox",
             "--skip-git-repo-check",
             "--ephemeral",
-            "-c",
-            'approval_policy="never"',
             "-m",
             self._model_name,
         ]

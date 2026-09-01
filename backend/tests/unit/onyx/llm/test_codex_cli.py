@@ -76,9 +76,9 @@ def test_stream_command_uses_json_flag() -> None:
     cmd = mock_popen.call_args[0][0]
     assert "--json" in cmd
     assert "exec" in cmd
-    assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
-    assert cmd[cmd.index("--sandbox") + 1] == "read-only"
-    assert 'approval_policy="never"' in cmd
+    assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+    assert "--sandbox" not in cmd
+    assert 'approval_policy="never"' not in cmd
     assert "--skip-git-repo-check" in cmd
     assert "--ephemeral" in cmd
 
