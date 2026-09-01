@@ -496,6 +496,16 @@ class LitellmLLM(LLM):
         ):
             model_kwargs[VERTEX_LOCATION_KWARG] = "global"
 
+        # Z.AI: OpenAI-compatible endpoint for GLM models.
+        # Route through LiteLLM's openai provider with Z.AI's API base.
+        if model_provider == LlmProviderNames.ZAI:
+            from onyx.llm.well_known_providers.constants import ZAI_DEFAULT_API_BASE
+
+            self._custom_llm_provider = "openai"
+            if self._api_base is None:
+                self._api_base = ZAI_DEFAULT_API_BASE
+            model_kwargs["api_base"] = self._api_base
+
         # Google AI Studio: Uses LiteLLM's gemini/ prefix for API key auth.
         # Model names are prefixed with "gemini/" by LiteLLM.
         if model_provider == LlmProviderNames.GOOGLE_AI_STUDIO:
@@ -659,6 +669,7 @@ class LitellmLLM(LLM):
 
         # Model name
         is_openai_compatible_proxy = self._api_surface in OPENAI_COMPATIBLE_SURFACES
+        is_zai = self._model_provider == LlmProviderNames.ZAI
         is_google_ai_studio = self._model_provider == LlmProviderNames.GOOGLE_AI_STUDIO
         is_openai_codex = self._model_provider == LlmProviderNames.OPENAI_CODEX
         model_provider = (
@@ -689,8 +700,8 @@ class LitellmLLM(LLM):
         if is_google_ai_studio:
             # Google AI Studio uses LiteLLM's gemini/ prefix.
             model = f"gemini/{model_bare}"
-        elif is_openai_codex:
-            # API-key-backed Codex uses the OpenAI-compatible route.
+        elif is_openai_codex or is_zai:
+            # These providers use the OpenAI-compatible route.
             model = model_bare
         elif self._api_surface is LlmApiSurface.OPENAI_RESPONSES:
             # Drives LiteLLM's completions -> responses bridge.
@@ -865,6 +876,7 @@ class LitellmLLM(LLM):
         if (
             not (is_claude_model or is_ollama or is_mistral)
             or is_openai_compatible_proxy
+            or is_zai
             or is_openai_codex
         ):
             # Litellm bug: tool_choice is dropped silently if not specified here for OpenAI
