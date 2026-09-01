@@ -89,10 +89,12 @@ def fetch_llm_recommendations_from_github(
 def get_merged_recommendations() -> LLMRecommendations:
     """Return bundled recommendations merged with the remote GitHub config.
 
-    GitHub takes precedence on conflicts so upstream can override bundled
-    defaults, but bundled providers (e.g. zai, google_ai_studio) survive when
-    upstream omits them. If the GitHub fetch fails or AUTO_LLM_CONFIG_URL is
-    unset, the bundled config is used alone.
+    The config with the newer ``updated_at`` timestamp takes precedence on
+    provider conflicts. Providers unique to either config are retained. This
+    lets a fork ship newer bundled recommendations without an older upstream
+    file reverting them, while still accepting later upstream updates. If the
+    GitHub fetch fails or AUTO_LLM_CONFIG_URL is unset, the bundled config is
+    used alone.
 
     After merging, dynamic per-provider detection (e.g. latest Gemini per tier
     pulled from litellm) is applied so visible model lists stay current
@@ -104,11 +106,16 @@ def get_merged_recommendations() -> LLMRecommendations:
     if remote is None:
         merged = bundled
     else:
-        merged_providers = dict(bundled.providers)
-        merged_providers.update(remote.providers)
+        if remote.updated_at > bundled.updated_at:
+            older, newer = bundled, remote
+        else:
+            older, newer = remote, bundled
+
+        merged_providers = dict(older.providers)
+        merged_providers.update(newer.providers)
         merged = LLMRecommendations(
-            version=remote.version,
-            updated_at=remote.updated_at,
+            version=newer.version,
+            updated_at=newer.updated_at,
             providers=merged_providers,
         )
 
@@ -144,8 +151,8 @@ def sync_llm_models_from_github(
         return {}
 
     # Build the merged config (bundled + GitHub). Bundled gives us coverage for
-    # providers that the upstream JSON doesn't know about (zai, google_ai_studio,
-    # openai_codex, claude_code_cli); GitHub overrides on conflicts.
+    # providers that the upstream JSON doesn't know about; the newer config
+    # wins on conflicts.
     config = get_merged_recommendations()
 
     # Skip if we've already processed this version (unless forced)

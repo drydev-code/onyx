@@ -6,12 +6,9 @@ expected by ``claude --mcp-config``.
 
 from sqlalchemy.orm import Session
 
-from onyx.configs.app_configs import MCP_SERVER_ENABLED
-from onyx.configs.app_configs import MCP_SERVER_PORT
-from onyx.db.enums import MCPServerStatus
-from onyx.db.enums import MCPTransport
-from onyx.db.mcp import extract_connection_data
-from onyx.db.mcp import get_all_mcp_servers
+from onyx.configs.app_configs import MCP_SERVER_ENABLED, MCP_SERVER_PORT
+from onyx.db.enums import MCPServerStatus, MCPTransport
+from onyx.db.mcp import extract_connection_data, get_all_mcp_servers
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -50,9 +47,7 @@ def build_mcp_config_for_cli(db_session: Session) -> dict:
             continue
 
         # Get connection data (headers, tokens) from admin config
-        connection_data = extract_connection_data(
-            server.admin_connection_config
-        )
+        connection_data = extract_connection_data(server.admin_connection_config)
         headers = dict(connection_data.get("headers", {}))
 
         transport = server.transport

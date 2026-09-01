@@ -8,6 +8,7 @@ import {
   SvgTavily,
 } from "@opal/logos";
 import { markdown } from "@opal/utils";
+import { ZAIIcon } from "@/components/icons/icons";
 import type {
   WebSearchProviderType,
   WebContentProviderType,
@@ -68,6 +69,13 @@ export const SEARCH_PROVIDER_DETAILS: Record<
     apiKeyUrl: "https://app.tavily.com/home",
     logo: SvgTavily,
   },
+  glm: {
+    label: "GLM",
+    subtitle: "Z.AI Web Search",
+    helper: "Connect to GLM Web Search (Z.AI) to set up web search.",
+    logo: ZAIIcon,
+    apiKeyUrl: "https://z.ai/subscribe",
+  },
 };
 
 export const SEARCH_PROVIDER_ORDER = Object.keys(
@@ -123,6 +131,10 @@ const SEARCH_PROVIDER_CAPABILITIES: Record<
     storedConfigAliases: { searxng_base_url: ["searxng_base_url"] },
   },
   tavily: {
+    requiresApiKey: true,
+    requiredConfigKeys: [],
+  },
+  glm: {
     requiresApiKey: true,
     requiredConfigKeys: [],
   },
@@ -199,6 +211,10 @@ export function buildSearchProviderConfig(
   const caps = getSearchCapabilities(providerType);
   const value = searchEngineIdOrBaseUrl.trim();
   const config: Record<string, string> = {};
+  if (providerType === "glm" && value) {
+    config.transport = value;
+    return config;
+  }
   if (!value || caps.requiredConfigKeys.length === 0) return config;
   const requiredKey = caps.requiredConfigKeys[0];
   if (!requiredKey) return config;
@@ -210,6 +226,10 @@ export function getSingleConfigFieldValueForForm(
   providerType: string,
   provider: SearchProviderLike
 ): string {
+  if (providerType === "glm") {
+    return provider?.config?.transport || "rest";
+  }
+
   const caps = getSearchCapabilities(providerType);
   if (caps.requiredConfigKeys.length === 0) return "";
   const requiredKey = caps.requiredConfigKeys[0];
@@ -381,6 +401,19 @@ export function getSingleContentConfigFieldValueForForm(
 export function getSearchConfigField(
   providerType: string
 ): ConfigFieldSpec | undefined {
+  if (providerType === "glm") {
+    return {
+      title: "Transport",
+      placeholder: "Select a transport",
+      defaultValue: "rest",
+      subDescription:
+        "REST is recommended. MCP uses Z.AI's streamable HTTP endpoint.",
+      options: [
+        { value: "rest", label: "REST (recommended)" },
+        { value: "mcp", label: "MCP" },
+      ],
+    };
+  }
   if (providerType === "google_pse") {
     return {
       title: "Search Engine ID",

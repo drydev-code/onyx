@@ -360,6 +360,7 @@ export default function LanguageModelsPage() {
           LLMProviderName.BEDROCK,
           LLMProviderName.AZURE,
           LLMProviderName.GOOGLE_AI_STUDIO,
+          LLMProviderName.ZAI,
         ],
       },
       {

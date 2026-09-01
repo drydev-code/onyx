@@ -262,7 +262,15 @@ def get_vertexai_model_names() -> list[str]:
 
 def get_zai_model_names() -> list[str]:
     """Get Z.AI GLM model names (static list)."""
-    return ["glm-5.1", "glm-5-turbo", "glm-5v-turbo"]
+    return [
+        "glm-5.1",
+        "glm-5",
+        "glm-5-turbo",
+        "glm-5v-turbo",
+        "glm-4.7",
+        "glm-4.7-flashx",
+        "glm-4.7-flash",
+    ]
 
 
 def get_google_ai_studio_model_names() -> list[str]:
@@ -274,11 +282,13 @@ def get_google_ai_studio_model_names() -> list[str]:
     import litellm
 
     _CURATED_GEMINI_MODELS: list[str] = [
-        "gemini-3-pro-preview",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-pro-preview",
+        "gemini-3.1-flash-lite",
         "gemini-3-flash-preview",
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
     ]
 
     models: set[str] = set()
@@ -310,12 +320,13 @@ def get_google_ai_studio_model_names() -> list[str]:
 def get_openai_codex_model_names() -> list[str]:
     """Get OpenAI Codex CLI model names (models the @openai/codex CLI supports)."""
     return [
-        "gpt-5.5-codex",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
         "gpt-5.5",
-        "gpt-5.5-codex-mini",
-        "gpt-5.1-codex",
-        "gpt-5.1",
-        "gpt-5.1-codex-mini",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.3-codex-spark",
     ]
 
 
@@ -327,11 +338,12 @@ def get_claude_code_cli_model_names() -> list[str]:
     against ``litellm.anthropic_models`` when adding a new release.
     """
     return [
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-sonnet-5",
         "claude-opus-4-8",
         "claude-opus-4-7",
         "claude-opus-4-6",
-        "claude-sonnet-5",
-        "claude-fable-5",
         "claude-sonnet-4-6",
         "claude-haiku-4-5",
     ]

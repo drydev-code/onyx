@@ -23,28 +23,6 @@ jest.mock("swr", () => {
   };
 });
 
-jest.mock("@/hooks/useToast", () => {
-  const success = jest.fn();
-  const error = jest.fn();
-  const toastFn = Object.assign(jest.fn(), {
-    success,
-    error,
-    info: jest.fn(),
-    warning: jest.fn(),
-    dismiss: jest.fn(),
-    clearAll: jest.fn(),
-    _markLeaving: jest.fn(),
-  });
-  return {
-    toast: toastFn,
-    useToast: () => ({
-      toast: toastFn,
-      dismiss: toastFn.dismiss,
-      clearAll: toastFn.clearAll,
-    }),
-  };
-});
-
 // Mock useTierAtLeast -- return false so the test exercises the
 // non-paid-tier code path, matching the prior usePaidEnterpriseFeaturesEnabled
 // mock behavior.
@@ -80,10 +58,7 @@ describe("CodexModal", () => {
   test("renders the API key field as an alternative to OAuth", () => {
     render(<CodexModal onOpenChange={() => {}} />);
 
-    // The API key field label includes "optional" to indicate OAuth is preferred
-    expect(
-      screen.getByText(/openai.*optional.*alternative to oauth/i)
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/api key/i)).toBeInTheDocument();
   });
 
   test("shows user code after starting device auth flow", async () => {
@@ -115,9 +90,7 @@ describe("CodexModal", () => {
 
     // Verify the verification URI link is present
     expect(screen.getByText("https://chatgpt.com/device")).toBeInTheDocument();
-    expect(
-      screen.getByText(/waiting for authorization/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/waiting for authorization/i)).toBeInTheDocument();
 
     // Verify the device auth API was called
     expect(fetchSpy).toHaveBeenCalledWith(

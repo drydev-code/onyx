@@ -27,7 +27,9 @@ left empty by default.
 
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -35,23 +37,21 @@ from collections.abc import Iterator
 from typing import Any
 
 from onyx.configs.model_configs import GEN_AI_TEMPERATURE
-from onyx.llm.interfaces import LanguageModelInput
-from onyx.llm.interfaces import LLM
-from onyx.llm.interfaces import LLMConfig
-from onyx.llm.interfaces import LLMUserIdentity
-from onyx.llm.model_response import ChatCompletionDeltaToolCall
-from onyx.llm.model_response import Choice
-from onyx.llm.model_response import Delta
-from onyx.llm.model_response import FunctionCall
-from onyx.llm.model_response import Message
-from onyx.llm.model_response import ModelResponse
-from onyx.llm.model_response import ModelResponseStream
-from onyx.llm.model_response import StreamingChoice
-from onyx.llm.model_response import Usage
-from onyx.llm.models import ReasoningEffort
-from onyx.llm.models import ToolChoiceOptions
-from onyx.llm.well_known_providers.constants import OPENAI_CODEX_ACCESS_TOKEN_KEY
+from onyx.llm.interfaces import LLM, LanguageModelInput, LLMConfig, LLMUserIdentity
+from onyx.llm.model_response import (
+    ChatCompletionDeltaToolCall,
+    Choice,
+    Delta,
+    FunctionCall,
+    Message,
+    ModelResponse,
+    ModelResponseStream,
+    StreamingChoice,
+    Usage,
+)
+from onyx.llm.models import ReasoningEffort, ToolChoiceOptions, resolve_reasoning_effort
 from onyx.llm.well_known_providers.constants import (
+    OPENAI_CODEX_ACCESS_TOKEN_KEY,
     OPENAI_CODEX_DISABLE_BUILTIN_TOOLS_KEY,
 )
 from onyx.utils.logger import setup_logger
@@ -184,11 +184,7 @@ def _build_codex_no_answer_message(
         )
 
     observed_unique = sorted(
-        {
-            (f"{e}:{i}" if i else e)
-            for e, i in observed_events
-            if e or i
-        }
+        {(f"{e}:{i}" if i else e) for e, i in observed_events if e or i}
     )
 
     details_lines: list[str] = ["**Codex CLI diagnostics:**"]
@@ -196,21 +192,15 @@ def _build_codex_no_answer_message(
     details_lines.append(f"- JSON events received: `{event_count}`")
     if observed_unique:
         details_lines.append(
-            "- Observed event shapes: `"
-            + ", ".join(observed_unique)
-            + "`"
+            "- Observed event shapes: `" + ", ".join(observed_unique) + "`"
         )
     else:
         details_lines.append("- Observed event shapes: _(none)_")
     if non_json_lines:
         joined = "\n".join(non_json_lines[-5:])
-        details_lines.append(
-            f"- Non-JSON stdout tail:\n```\n{joined}\n```"
-        )
+        details_lines.append(f"- Non-JSON stdout tail:\n```\n{joined}\n```")
     if stderr_text:
-        details_lines.append(
-            f"- Stderr tail:\n```\n{stderr_text[-1500:].strip()}\n```"
-        )
+        details_lines.append(f"- Stderr tail:\n```\n{stderr_text[-1500:].strip()}\n```")
 
     diagnostics = "\n".join(details_lines)
     return f"{headline}\n\n<details>\n<summary>Diagnostics</summary>\n\n{diagnostics}\n\n</details>"
@@ -244,6 +234,7 @@ def _extract_codex_answer_text(item: dict[str, Any]) -> str:
             if joined:
                 return joined
     return ""
+
 
 # Max chars of aggregated_output to include in a reasoning chunk. Longer
 # output is truncated with a marker -- full output is still available in
@@ -299,10 +290,7 @@ def _make_usage() -> Usage:
 def _format_codex_command_start(command: str) -> str:
     """Initial reasoning markdown shown while a shell command is running."""
     safe_cmd = (command or "").strip() or "(empty)"
-    return (
-        f"\n\n---\n\n### 💻 `Bash`\n\n"
-        f"```bash\n{safe_cmd}\n```\n\n*running...*\n"
-    )
+    return f"\n\n---\n\n### 💻 `Bash`\n\n```bash\n{safe_cmd}\n```\n\n*running...*\n"
 
 
 def _format_codex_command_result(
@@ -314,9 +302,7 @@ def _format_codex_command_result(
     full_output = aggregated_output or ""
     truncated = full_output[:_CODEX_OUTPUT_MAX_CHARS]
     if len(full_output) > _CODEX_OUTPUT_MAX_CHARS:
-        truncated += (
-            f"\n... (truncated, full output {len(full_output)} chars)"
-        )
+        truncated += f"\n... (truncated, full output {len(full_output)} chars)"
     exit_line = (
         f"**Exit:** {exit_code} (`{status or 'unknown'}`)\n\n"
         if exit_code is not None
@@ -332,10 +318,7 @@ def _format_codex_generic_item(item_type: str, item: dict[str, Any]) -> str:
         body = json.dumps(item, indent=2)
     except (TypeError, ValueError):
         body = str(item)
-    return (
-        f"\n\n---\n\n### {icon} `{item_type}`\n\n"
-        f"```json\n{body}\n```\n"
-    )
+    return f"\n\n---\n\n### {icon} `{item_type}`\n\n```json\n{body}\n```\n"
 
 
 def _build_codex_usage(usage_data: dict[str, Any]) -> Usage:
@@ -364,6 +347,9 @@ class CodexCLI(LLM):
         custom_config: dict[str, str] | None = None,
         timeout: int | None = None,
         max_input_tokens: int = 128000,
+        reasoning_effort_default: ReasoningEffort | None = None,
+        reasoning_effort_user_default: ReasoningEffort | None = None,
+        reasoning_effort_max: ReasoningEffort | None = None,
     ):
         self._model_name = model_name
         self._temperature = (
@@ -372,6 +358,9 @@ class CodexCLI(LLM):
         self._custom_config = custom_config or {}
         self._timeout = timeout or _DEFAULT_TIMEOUT
         self._max_input_tokens = max_input_tokens
+        self._reasoning_effort_default = reasoning_effort_default
+        self._reasoning_effort_user_default = reasoning_effort_user_default
+        self._reasoning_effort_max = reasoning_effort_max
         self._cli_path = _DEFAULT_CLI_PATH
         # Default ON: disable Codex's native web search so Onyx's
         # configured search tools handle web queries instead. Admins can
@@ -387,7 +376,7 @@ class CodexCLI(LLM):
             != "false"
         )
 
-    def _setup_auth(self) -> None:
+    def _setup_auth(self, codex_home: str | None = None) -> None:
         """Ensure Codex CLI has file-based authentication available.
 
         Writes config.toml (forces file-based credential store to bypass
@@ -403,14 +392,10 @@ class CodexCLI(LLM):
             OPENAI_CODEX_REFRESH_TOKEN_KEY,
         )
 
-        refresh_token = self._custom_config.get(
-            OPENAI_CODEX_REFRESH_TOKEN_KEY, ""
-        )
-        id_token = self._custom_config.get(
-            OPENAI_CODEX_ID_TOKEN_KEY, access_token
-        )
+        refresh_token = self._custom_config.get(OPENAI_CODEX_REFRESH_TOKEN_KEY, "")
+        id_token = self._custom_config.get(OPENAI_CODEX_ID_TOKEN_KEY, access_token)
 
-        codex_home = os.path.expanduser("~/.codex")
+        codex_home = codex_home or os.path.expanduser("~/.codex")
         os.makedirs(codex_home, exist_ok=True)
 
         config_path = os.path.join(codex_home, "config.toml")
@@ -453,14 +438,28 @@ class CodexCLI(LLM):
         cmd = [
             self._cli_path,
             "exec",
+            # The Onyx container is the external sandbox. A nested Codex
+            # sandbox requires Linux user namespaces that Docker blocks.
             "--dangerously-bypass-approvals-and-sandbox",
             "--skip-git-repo-check",
             "--ephemeral",
-            "-m", self._model_name,
+            "-m",
+            self._model_name,
         ]
         if self._disable_builtin_tools and _CODEX_DISABLE_WEB_TOOL_FLAGS:
             cmd.extend(_CODEX_DISABLE_WEB_TOOL_FLAGS)
         return cmd
+
+    def _add_reasoning_effort(self, cmd: list[str], requested: ReasoningEffort) -> None:
+        effort = resolve_reasoning_effort(
+            requested,
+            default=self._reasoning_effort_default,
+            user_default=self._reasoning_effort_user_default,
+            maximum=self._reasoning_effort_max,
+        )
+        if effort in (ReasoningEffort.AUTO, ReasoningEffort.OFF):
+            return
+        cmd.extend(["-c", f'model_reasoning_effort="{effort.value}"'])
 
     @property
     def config(self) -> LLMConfig:
@@ -470,6 +469,9 @@ class CodexCLI(LLM):
             temperature=self._temperature,
             custom_config=self._custom_config,
             max_input_tokens=self._max_input_tokens,
+            reasoning_effort_default=self._reasoning_effort_default,
+            reasoning_effort_user_default=self._reasoning_effort_user_default,
+            reasoning_effort_max=self._reasoning_effort_max,
             cli_tool_bridge=_CODEX_TOOL_BRIDGE or None,
         )
 
@@ -492,26 +494,29 @@ class CodexCLI(LLM):
         system_text, user_text = _extract_system_and_user(prompt)
         timeout = timeout_override or self._timeout
 
-        self._setup_auth()
-
-        import tempfile
+        codex_home = tempfile.mkdtemp(prefix="onyx-codex-")
+        try:
+            self._setup_auth(codex_home)
+        except Exception:
+            shutil.rmtree(codex_home, ignore_errors=True)
+            raise
 
         output_file = os.path.join(
             tempfile.gettempdir(), f"codex-{uuid.uuid4().hex[:8]}.txt"
         )
 
         cmd = self._build_base_cmd()
+        self._add_reasoning_effort(cmd, reasoning_effort)
         cmd.extend(["-o", output_file])
         instructions = system_text or _DEFAULT_INSTRUCTIONS
         escaped = (
-            instructions.replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
+            instructions.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
         )
         cmd.extend(["-c", f'instructions="{escaped}"'])
         cmd.append(user_text)
 
         env = os.environ.copy()
+        env["CODEX_HOME"] = codex_home
         env["NO_COLOR"] = "1"
         env["TERM"] = "dumb"
 
@@ -523,7 +528,8 @@ class CodexCLI(LLM):
                 stdin=subprocess.DEVNULL,
                 env=env,
             )
-        except FileNotFoundError:
+        except OSError:
+            shutil.rmtree(codex_home, ignore_errors=True)
             raise RuntimeError(
                 f"Codex CLI not found at '{self._cli_path}'. "
                 "Ensure the 'codex' CLI is installed."
@@ -549,16 +555,17 @@ class CodexCLI(LLM):
             if elapsed_idle > timeout:
                 proc.kill()
                 proc.wait()
-                raise TimeoutError(
-                    f"Codex CLI idle for {timeout}s with no output"
-                )
+                try:
+                    os.unlink(output_file)
+                except OSError:
+                    pass
+                shutil.rmtree(codex_home, ignore_errors=True)
+                raise TimeoutError(f"Codex CLI idle for {timeout}s with no output")
             time.sleep(1)
 
         stderr_thread.join(timeout=5)
         stdout_data = (
-            proc.stdout.read().decode("utf-8", errors="replace")
-            if proc.stdout
-            else ""
+            proc.stdout.read().decode("utf-8", errors="replace") if proc.stdout else ""
         )
 
         if proc.returncode != 0:
@@ -568,6 +575,11 @@ class CodexCLI(LLM):
                 for l in error_msg.split("\n")
                 if "ERROR:" in l and "Reconnecting" not in l
             ]
+            try:
+                os.unlink(output_file)
+            except OSError:
+                pass
+            shutil.rmtree(codex_home, ignore_errors=True)
             raise RuntimeError(
                 f"Codex CLI error: "
                 f"{fatal_lines[-1] if fatal_lines else error_msg[-500:]}"
@@ -577,13 +589,14 @@ class CodexCLI(LLM):
         try:
             with open(output_file, "r") as f:
                 response_text = f.read().strip()
-        except FileNotFoundError:
+        except OSError:
             response_text = stdout_data.strip()
         finally:
             try:
                 os.unlink(output_file)
             except OSError:
                 pass
+            shutil.rmtree(codex_home, ignore_errors=True)
 
         return ModelResponse(
             id=f"codex-{uuid.uuid4().hex[:12]}",
@@ -591,9 +604,7 @@ class CodexCLI(LLM):
             choice=Choice(
                 finish_reason="stop",
                 index=0,
-                message=Message(
-                    content=response_text.strip(), role="assistant"
-                ),
+                message=Message(content=response_text.strip(), role="assistant"),
             ),
             usage=_make_usage(),
         )
@@ -618,24 +629,29 @@ class CodexCLI(LLM):
             )
 
         system_text, user_text = _extract_system_and_user(prompt)
-        self._setup_auth()
+        codex_home = tempfile.mkdtemp(prefix="onyx-codex-")
+        try:
+            self._setup_auth(codex_home)
+        except Exception:
+            shutil.rmtree(codex_home, ignore_errors=True)
+            raise
 
         response_id = f"codex-{uuid.uuid4().hex[:12]}"
         created = str(int(time.time()))
 
         instructions = system_text or _DEFAULT_INSTRUCTIONS
         escaped = (
-            instructions.replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
+            instructions.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
         )
 
         cmd = self._build_base_cmd()
+        self._add_reasoning_effort(cmd, reasoning_effort)
         cmd.append("--json")
         cmd.extend(["-c", f'instructions="{escaped}"'])
         cmd.append(user_text)
 
         env = os.environ.copy()
+        env["CODEX_HOME"] = codex_home
         env["NO_COLOR"] = "1"
         env["TERM"] = "dumb"
 
@@ -650,6 +666,7 @@ class CodexCLI(LLM):
                 env=env,
             )
         except FileNotFoundError:
+            shutil.rmtree(codex_home, ignore_errors=True)
             raise RuntimeError(
                 f"Codex CLI not found at '{self._cli_path}'. "
                 "Ensure the 'codex' CLI is installed."
@@ -729,29 +746,26 @@ class CodexCLI(LLM):
                         final_usage = _build_codex_usage(usage_data)
                     continue
 
-                for chunk in self._dispatch_codex_event(
-                    event, response_id, created
-                ):
+                for chunk in self._dispatch_codex_event(event, response_id, created):
                     if chunk.choice.delta.content:
                         answer_emitted = True
                     yield chunk
 
                 # Track error item messages so we can surface them as
                 # content if the stream never produced an answer.
-                if (
-                    event_type == "item.completed"
-                    and item_type == "error"
-                ):
+                if event_type == "item.completed" and item_type == "error":
                     msg = item_obj.get("message", "")
-                    if msg and "OPENAI_BASE_URL" not in msg and not (
-                        "deprecated" in msg.lower() and "features" in msg.lower()
+                    if (
+                        msg
+                        and "OPENAI_BASE_URL" not in msg
+                        and not (
+                            "deprecated" in msg.lower() and "features" in msg.lower()
+                        )
                     ):
                         error_messages.append(msg)
 
             if timed_out.is_set():
-                raise TimeoutError(
-                    f"Codex CLI streaming timed out after {timeout}s"
-                )
+                raise TimeoutError(f"Codex CLI streaming timed out after {timeout}s")
 
             # If no agent_message-like item ever produced content, surface
             # something usable so the upstream LLM loop doesn't fail with
@@ -811,17 +825,14 @@ class CodexCLI(LLM):
             yield ModelResponseStream(
                 id=response_id,
                 created=created,
-                choice=StreamingChoice(
-                    finish_reason="stop", index=0, delta=Delta()
-                ),
+                choice=StreamingChoice(finish_reason="stop", index=0, delta=Delta()),
                 usage=final_usage or _make_usage(),
             )
 
         finally:
             timer.cancel()
             logger.info(
-                "Codex CLI stream ended: %d events, timed_out=%s, "
-                "observed=%s",
+                "Codex CLI stream ended: %d events, timed_out=%s, observed=%s",
                 event_count,
                 timed_out.is_set(),
                 sorted({f"{e}:{i}" for e, i in observed_events}),
@@ -830,8 +841,7 @@ class CodexCLI(LLM):
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 logger.warning(
-                    "Codex CLI did not exit within 5s after stream ended; "
-                    "killing it."
+                    "Codex CLI did not exit within 5s after stream ended; killing it."
                 )
                 proc.kill()
                 proc.wait(timeout=5)
@@ -840,9 +850,8 @@ class CodexCLI(LLM):
             if stderr:
                 logger.info("Codex stderr: %s", stderr[:2000])
             if proc.returncode and proc.returncode != 0:
-                logger.warning(
-                    "Codex CLI exited with code %d", proc.returncode
-                )
+                logger.warning("Codex CLI exited with code %d", proc.returncode)
+            shutil.rmtree(codex_home, ignore_errors=True)
 
     def _dispatch_codex_event(
         self, event: dict[str, Any], response_id: str, created: str
@@ -879,9 +888,7 @@ class CodexCLI(LLM):
                 choice=StreamingChoice(
                     index=0,
                     delta=Delta(
-                        reasoning_content=_format_codex_generic_item(
-                            item_type, item
-                        ),
+                        reasoning_content=_format_codex_generic_item(item_type, item),
                     ),
                 ),
             )
@@ -967,9 +974,7 @@ class CodexCLI(LLM):
                                     type="function",
                                     function=FunctionCall(
                                         name=item_type,
-                                        arguments=json.dumps(
-                                            arguments_dict or item
-                                        ),
+                                        arguments=json.dumps(arguments_dict or item),
                                     ),
                                 )
                             ],
@@ -986,9 +991,7 @@ class CodexCLI(LLM):
                 choice=StreamingChoice(
                     index=0,
                     delta=Delta(
-                        reasoning_content=_format_codex_generic_item(
-                            item_type, item
-                        ),
+                        reasoning_content=_format_codex_generic_item(item_type, item),
                     ),
                 ),
             )

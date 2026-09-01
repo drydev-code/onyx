@@ -597,6 +597,9 @@ def get_llm(
                 custom_config=custom_config,
                 timeout=timeout,
                 max_input_tokens=max_input_tokens,
+                reasoning_effort_default=reasoning_effort_default,
+                reasoning_effort_user_default=reasoning_effort_user_default,
+                reasoning_effort_max=reasoning_effort_max,
             )
 
     # Claude Code CLI uses a subprocess-based LLM, not LiteLLM
@@ -610,6 +613,9 @@ def get_llm(
             custom_config=custom_config,
             timeout=timeout,
             max_input_tokens=max_input_tokens,
+            reasoning_effort_default=reasoning_effort_default,
+            reasoning_effort_user_default=reasoning_effort_user_default,
+            reasoning_effort_max=reasoning_effort_max,
         )
 
     return LitellmLLM(

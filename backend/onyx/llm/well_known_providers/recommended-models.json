@@ -1,6 +1,6 @@
 {
-  "version": "1.13",
-  "updated_at": "2026-08-24T00:00:00Z",
+  "version": "1.15",
+  "updated_at": "2026-08-31T00:00:00Z",
   "providers": {
     "openai": {
       "default_model": "gpt-5.6-sol",
@@ -27,6 +27,18 @@
           "display_name": "Claude Opus 5"
         },
         {
+          "name": "claude-opus-4-8",
+          "display_name": "Claude Opus 4.8"
+        },
+        {
+          "name": "claude-opus-4-7",
+          "display_name": "Claude Opus 4.7"
+        },
+        {
+          "name": "claude-opus-4-6",
+          "display_name": "Claude Opus 4.6"
+        },
+        {
           "name": "claude-fable-5",
           "display_name": "Claude Fable 5"
         },
@@ -35,21 +47,29 @@
           "display_name": "Claude Sonnet 5"
         },
         {
+          "name": "claude-sonnet-4-6",
+          "display_name": "Claude Sonnet 4.6"
+        },
+        {
           "name": "claude-haiku-4-5",
           "display_name": "Claude Haiku 4.5"
         }
       ]
     },
     "vertex_ai": {
-      "default_model": "gemini-3.1-pro-preview",
+      "default_model": "gemini-3.7-flash",
       "additional_visible_models": [
+        {
+          "name": "gemini-3.7-flash",
+          "display_name": "Gemini 3.7 Flash"
+        },
         {
           "name": "gemini-3.1-pro-preview",
           "display_name": "Gemini 3.1 Pro"
         },
         {
-          "name": "gemini-3.7-flash",
-          "display_name": "Gemini 3.7 Flash"
+          "name": "gemini-3.5-flash-lite",
+          "display_name": "Gemini 3.5 Flash Lite"
         }
       ]
     },
@@ -75,43 +95,139 @@
       ]
     },
     "zai": {
-      "default_model": { "name": "glm-5.1", "display_name": "GLM 5.1" },
+      "default_model": "glm-5.1",
       "additional_visible_models": [
-        { "name": "glm-5-turbo", "display_name": "GLM 5 Turbo" },
-        { "name": "glm-5v-turbo", "display_name": "GLM 5V Turbo" }
+        {
+          "name": "glm-5.1",
+          "display_name": "GLM 5.1"
+        },
+        {
+          "name": "glm-5",
+          "display_name": "GLM 5"
+        },
+        {
+          "name": "glm-5-turbo",
+          "display_name": "GLM 5 Turbo"
+        },
+        {
+          "name": "glm-5v-turbo",
+          "display_name": "GLM 5V Turbo"
+        },
+        {
+          "name": "glm-4.7",
+          "display_name": "GLM 4.7"
+        },
+        {
+          "name": "glm-4.7-flashx",
+          "display_name": "GLM 4.7 FlashX"
+        },
+        {
+          "name": "glm-4.7-flash",
+          "display_name": "GLM 4.7 Flash"
+        }
       ]
     },
     "google_ai_studio": {
-      "default_model": {
-        "name": "gemini-3-pro-preview",
-        "display_name": "Gemini 3 Pro"
-      },
+      "default_model": "gemini-3.7-flash",
       "additional_visible_models": [
-        { "name": "gemini-3-flash-preview", "display_name": "Gemini 3 Flash" }
+        {
+          "name": "gemini-3.7-flash",
+          "display_name": "Gemini 3.7 Flash"
+        },
+        {
+          "name": "gemini-3.6-flash",
+          "display_name": "Gemini 3.6 Flash"
+        },
+        {
+          "name": "gemini-3.5-flash",
+          "display_name": "Gemini 3.5 Flash"
+        },
+        {
+          "name": "gemini-3.5-flash-lite",
+          "display_name": "Gemini 3.5 Flash Lite"
+        },
+        {
+          "name": "gemini-3.1-pro-preview",
+          "display_name": "Gemini 3.1 Pro Preview"
+        },
+        {
+          "name": "gemini-3.1-flash-lite",
+          "display_name": "Gemini 3.1 Flash Lite"
+        },
+        {
+          "name": "gemini-3-flash-preview",
+          "display_name": "Gemini 3 Flash Preview"
+        }
       ]
     },
     "openai_codex": {
-      "default_model": {
-        "name": "gpt-5.5-codex",
-        "display_name": "GPT-5.5 Codex"
-      },
+      "default_model": "gpt-5.6-sol",
       "additional_visible_models": [
-        { "name": "gpt-5.5", "display_name": "GPT-5.5" },
-        { "name": "gpt-5.5-codex-mini", "display_name": "GPT-5.5 Codex Mini" },
-        { "name": "gpt-5.1-codex", "display_name": "GPT-5.1 Codex" },
-        { "name": "gpt-5.1", "display_name": "GPT-5.1" },
-        { "name": "gpt-5.1-codex-mini", "display_name": "GPT-5.1 Codex Mini" }
+        {
+          "name": "gpt-5.6-sol",
+          "display_name": "GPT-5.6 Sol"
+        },
+        {
+          "name": "gpt-5.6-terra",
+          "display_name": "GPT-5.6 Terra"
+        },
+        {
+          "name": "gpt-5.6-luna",
+          "display_name": "GPT-5.6 Luna"
+        },
+        {
+          "name": "gpt-5.5",
+          "display_name": "GPT-5.5"
+        },
+        {
+          "name": "gpt-5.4",
+          "display_name": "GPT-5.4"
+        },
+        {
+          "name": "gpt-5.4-mini",
+          "display_name": "GPT-5.4 Mini"
+        },
+        {
+          "name": "gpt-5.3-codex-spark",
+          "display_name": "GPT-5.3 Codex Spark"
+        }
       ]
     },
     "claude_code_cli": {
-      "default_model": { "name": "claude-opus-4-8", "display_name": "Claude Opus 4.8" },
+      "default_model": "claude-opus-5",
       "additional_visible_models": [
-        { "name": "claude-opus-4-7", "display_name": "Claude Opus 4.7" },
-        { "name": "claude-opus-4-6", "display_name": "Claude Opus 4.6" },
-        { "name": "claude-sonnet-5", "display_name": "Claude Sonnet 5" },
-        { "name": "claude-fable-5", "display_name": "Claude Fable 5" },
-        { "name": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6" },
-        { "name": "claude-haiku-4-5", "display_name": "Claude Haiku 4.5" }
+        {
+          "name": "claude-opus-5",
+          "display_name": "Claude Opus 5"
+        },
+        {
+          "name": "claude-fable-5",
+          "display_name": "Claude Fable 5"
+        },
+        {
+          "name": "claude-sonnet-5",
+          "display_name": "Claude Sonnet 5"
+        },
+        {
+          "name": "claude-opus-4-8",
+          "display_name": "Claude Opus 4.8"
+        },
+        {
+          "name": "claude-opus-4-7",
+          "display_name": "Claude Opus 4.7"
+        },
+        {
+          "name": "claude-opus-4-6",
+          "display_name": "Claude Opus 4.6"
+        },
+        {
+          "name": "claude-sonnet-4-6",
+          "display_name": "Claude Sonnet 4.6"
+        },
+        {
+          "name": "claude-haiku-4-5",
+          "display_name": "Claude Haiku 4.5"
+        }
       ]
     }
   }

@@ -3514,6 +3514,12 @@
         "loading": {
           "placeholder": "正在加载..."
         },
+        "modelName": {
+          "idle": "请输入 ImageRouter 支持的任意模型名称。",
+          "label": "模型名称",
+          "placeholder": "输入支持的模型名称",
+          "required": "模型名称为必填项"
+        },
         "location": {
           "idle": "用于 Vertex AI 模型的 Google Cloud 区域。可用区域请参见 <link>Google 文档</link>。",
           "label": "位置",
@@ -3563,6 +3569,18 @@
         },
         "gemini3ProImagePreview": {
           "description": "Google Cloud 已于 2026 年 7 月 17 日停止提供。请切换到 Gemini 3 Pro Image。"
+        },
+        "googleAiStudioGemini25FlashImage": {
+          "description": "通过 Google AI Studio 使用的 Gemini 2.5 Flash Image 专为快速高效的图像生成而设计。"
+        },
+        "googleAiStudioGemini31FlashImage": {
+          "description": "通过 Google AI Studio 使用的 Nano Banana 2 兼具 Nano Banana Pro 的质量与 Flash 的速度，最高支持 4K 分辨率。"
+        },
+        "googleAiStudioGemini3ProImage": {
+          "description": "通过 Google AI Studio 使用的 Nano Banana Pro 专为专业素材制作而设计，并改进了文字渲染。"
+        },
+        "imageRouter": {
+          "description": "使用一个 API 密钥访问 ImageRouter 的图像生成模型，并指定其 API 支持的任意模型。"
         },
         "openaiGptImage1": {
           "description": "来自 OpenAI 的高性能图像生成模型，对提示词的遵循度很高。"
@@ -4357,6 +4375,57 @@
           "validation": {
             "displayNameRequired": "显示名称为必填项",
             "providerNameRequired": "提供商名称为必填项"
+          }
+        },
+        "codex": {
+          "authentication": {
+            "description": "使用 ChatGPT 帐户登录，或在下方提供 OpenAI API 密钥。",
+            "title": "身份验证"
+          },
+          "authorized": {
+            "message": "已成功通过 ChatGPT 完成身份验证。"
+          },
+          "errors": {
+            "expired": "设备代码已过期，请重试。",
+            "missingAccessToken": "授权响应中没有访问令牌。",
+            "pollFailed": "无法检查授权状态。",
+            "startFailed": "无法启动设备授权。",
+            "unknown": "发生未知授权错误。"
+          },
+          "pending": {
+            "codePrompt": "请输入此代码：",
+            "instructions": "在新标签页中打开授权页面：",
+            "waiting": "正在等待授权..."
+          },
+          "signInButton": {
+            "label": "使用 ChatGPT 登录"
+          },
+          "tryAgainButton": {
+            "label": "重试"
+          },
+          "validation": {
+            "authenticationRequired": "请使用 ChatGPT 登录或提供 OpenAI API 密钥。"
+          }
+        },
+        "claudeCode": {
+          "cliPath": {
+            "title": "CLI 路径",
+            "description": "Claude Code CLI 可执行文件的路径。留空将使用服务器 PATH 中的 claude。",
+            "placeholder": "claude"
+          },
+          "authMode": {
+            "title": "身份验证方式",
+            "description": "选择 Claude Code 向 Anthropic 进行身份验证的方式。",
+            "apiKey": "API 密钥",
+            "oauth": "OAuth 令牌"
+          },
+          "oauthToken": {
+            "title": "OAuth 令牌",
+            "description": "在受信任的计算机上运行 claude setup-token，然后粘贴生成的令牌。",
+            "placeholder": "粘贴 OAuth 令牌"
+          },
+          "validation": {
+            "authenticationRequired": "请提供 Anthropic API 密钥或 Claude Code OAuth 令牌。"
           }
         },
         "liteLlmProxy": {

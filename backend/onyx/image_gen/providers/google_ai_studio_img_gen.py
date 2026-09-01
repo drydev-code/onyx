@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 from onyx.image_gen.interfaces import ImageGenerationProvider
 from onyx.image_gen.interfaces import ImageGenerationProviderCredentials
 from onyx.image_gen.interfaces import ReferenceImage
+from onyx.tracing.flows import LLMFlow
+from onyx.tracing.llm_utils import traced_llm_call
 
 if TYPE_CHECKING:
     from onyx.image_gen.interfaces import ImageGenerationResponse
@@ -62,12 +64,19 @@ class GoogleAIStudioImageGenerationProvider(ImageGenerationProvider):
         # Prefix model with gemini/ for LiteLLM routing
         litellm_model = model if model.startswith("gemini/") else f"gemini/{model}"
 
-        return image_generation(
-            prompt=prompt,
-            model=litellm_model,
-            api_key=self._api_key,
-            size=size,
-            n=n,
-            quality=quality,
-            **kwargs,
-        )
+        with traced_llm_call(
+            flow=LLMFlow.IMAGE_GENERATION,
+            model=model,
+            provider="google_ai_studio",
+            image_count=n,
+            input_messages=[{"role": "user", "content": prompt}],
+        ):
+            return image_generation(
+                prompt=prompt,
+                model=litellm_model,
+                api_key=self._api_key,
+                size=size,
+                n=n,
+                quality=quality,
+                **kwargs,
+            )

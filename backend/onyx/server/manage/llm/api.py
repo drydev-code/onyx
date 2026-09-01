@@ -9,9 +9,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 from botocore.tokens import FrozenAuthToken, TokenProviderChain
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
-from pydantic import ValidationError
-
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from onyx.auth.permissions import has_global_permission, require_permission
@@ -536,9 +534,8 @@ def test_llm_configuration(
             OPENAI_CODEX_ACCESS_TOKEN_KEY,
         )
 
-        has_oauth = (
-            test_custom_config
-            and test_custom_config.get(OPENAI_CODEX_ACCESS_TOKEN_KEY)
+        has_oauth = test_custom_config and test_custom_config.get(
+            OPENAI_CODEX_ACCESS_TOKEN_KEY
         )
         if has_oauth:
             return  # OAuth token accepted — validated during device auth flow
@@ -2616,7 +2613,19 @@ def initiate_codex_device_auth(
     """Initiate OpenAI Codex device code authorization flow."""
     from onyx.server.manage.llm.codex_oauth import initiate_device_auth
 
-    auth = initiate_device_auth()
+    try:
+        auth = initiate_device_auth()
+    except httpx.HTTPStatusError as error:
+        raise OnyxError(
+            OnyxErrorCode.BAD_GATEWAY,
+            "OpenAI rejected the device authorization request.",
+            status_code_override=error.response.status_code,
+        ) from error
+    except httpx.HTTPError as error:
+        raise OnyxError(
+            OnyxErrorCode.BAD_GATEWAY,
+            "Could not reach OpenAI's authorization service.",
+        ) from error
     return CodexDeviceAuthResponse(
         device_code=auth.device_auth_id,
         user_code=auth.user_code,
@@ -2647,39 +2656,17 @@ def poll_codex_device_auth(
         )
     except ValueError as e:
         return CodexPollResponse(status="error", error=str(e))
-
-
-class ClaudeCLISetupTokenRequest(BaseModel):
-    oauth_token: str
-    cli_path: str = "claude"
-
-
-class ClaudeCLISetupTokenResponse(BaseModel):
-    status: str  # "ok" or "error"
-    error: str | None = None
-    cli_version: str | None = None
-
-
-@admin_router.post("/claude-cli/setup-token")
-def setup_claude_cli_token(
-    request: ClaudeCLISetupTokenRequest,
-    _: User = Depends(require_permission(Permission.MANAGE_LLMS)),
-) -> ClaudeCLISetupTokenResponse:
-    """Validate and accept a Claude Code CLI OAuth token.
-
-    Runs a quick CLI command with the token set as CLAUDE_CODE_OAUTH_TOKEN
-    to verify the CLI is reachable and the token format is plausible.
-    """
-    from onyx.server.manage.llm.claude_cli_auth import validate_oauth_token
-
-    error = validate_oauth_token(
-        oauth_token=request.oauth_token,
-        cli_path=request.cli_path,
-    )
-    if error:
-        return ClaudeCLISetupTokenResponse(status="error", error=error)
-
-    return ClaudeCLISetupTokenResponse(status="ok")
+    except httpx.HTTPStatusError as error:
+        raise OnyxError(
+            OnyxErrorCode.BAD_GATEWAY,
+            "OpenAI rejected the device authorization poll.",
+            status_code_override=error.response.status_code,
+        ) from error
+    except httpx.HTTPError as error:
+        raise OnyxError(
+            OnyxErrorCode.BAD_GATEWAY,
+            "Could not reach OpenAI's authorization service.",
+        ) from error
 
 
 @admin_router.get("/cli-availability")
