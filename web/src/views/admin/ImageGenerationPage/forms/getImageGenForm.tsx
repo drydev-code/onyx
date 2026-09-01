@@ -3,6 +3,7 @@ import { ImageGenFormBaseProps } from "@/views/admin/ImageGenerationPage/forms/t
 import { OpenAIImageGenForm } from "@/views/admin/ImageGenerationPage/forms/OpenAIImageGenForm";
 import { AzureImageGenForm } from "@/views/admin/ImageGenerationPage/forms/AzureImageGenForm";
 import { VertexImageGenForm } from "@/views/admin/ImageGenerationPage/forms/VertexImageGenForm";
+import { ImageRouterForm } from "@/views/admin/ImageGenerationPage/forms/ImageRouterForm";
 import { GoogleAIStudioImageGenForm } from "@/views/admin/ImageGenerationPage/forms/GoogleAIStudioImageGenForm";
 
 /**
@@ -19,6 +20,8 @@ export function getImageGenForm(props: ImageGenFormBaseProps): React.ReactNode {
       return <AzureImageGenForm {...props} />;
     case "vertex_ai":
       return <VertexImageGenForm {...props} />;
+    case "imagerouter":
+      return <ImageRouterForm {...props} />;
     case "google_ai_studio":
       return <GoogleAIStudioImageGenForm {...props} />;
     default:
