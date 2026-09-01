@@ -42,6 +42,7 @@ import NebiusTokenfactoryModal from "@/sections/modals/languageModels/NebiusToke
 import PortkeyModal from "@/sections/modals/languageModels/PortkeyModal";
 import ZAIModal from "@/sections/modals/languageModels/ZAIModal";
 import CodexModal from "@/sections/modals/languageModels/CodexModal";
+import ClaudeCodeCLIModal from "@/sections/modals/languageModels/ClaudeCodeCLIModal";
 
 // ─── Text (LLM) providers ────────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ const PROVIDERS: Record<string, ProviderEntry> = {
     icon: SvgClaude,
     productName: "Claude Code",
     companyName: "Anthropic",
-    Modal: CustomModal,
+    Modal: ClaudeCodeCLIModal,
   },
   [LLMProviderName.CUSTOM]: {
     icon: SvgServer,
