@@ -135,6 +135,7 @@ restart_services_remote() {
     local services="$1"
     echo "==> Restarting services: $services"
     $SSH "cd $DEPLOYMENT_DIR && \
+        ONYX_BACKEND_IMAGE=$BACKEND_TAG ONYX_WEB_SERVER_IMAGE=$WEB_TAG \
         docker compose -f docker-compose.yml -f $CRAFT_COMPOSE_FILE \
             up -d --no-build --force-recreate $services && \
         docker compose -f docker-compose.yml -f $CRAFT_COMPOSE_FILE restart nginx"
