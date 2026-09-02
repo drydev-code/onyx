@@ -17,9 +17,11 @@ from onyx.chat.emitter import Emitter
 from onyx.chat.models import ChatMessageSimple, LlmStepResult
 from onyx.configs.constants import MessageType
 from onyx.deep_research.dr_mock_tools import (
+    RESEARCH_AGENT_CONTEXT_KEY,
     RESEARCH_AGENT_TASK_KEY,
     RESEARCH_AGENT_TOOL_NAME,
 )
+from onyx.deep_research.models import CombinedResearchAgentCallResult
 from onyx.llm.factory import get_llm_token_counter
 from onyx.llm.interfaces import LLM, LLMUserIdentity
 from onyx.llm.model_capabilities import model_is_reasoning_model
@@ -53,7 +55,9 @@ from onyx.tools.models import (
 from onyx.tools.tool_implementations.file_reader.file_reader_tool import FileReaderTool
 from onyx.tools.tool_implementations.open_url.open_url_tool import OpenURLTool
 from onyx.tools.tool_implementations.parallel_agents.models import (
+    MAX_PARALLEL_AGENTS,
     ParallelAgentPlan,
+    build_parallel_agent_execution_batches,
     build_parallel_agent_search_response,
     format_parallel_agent_plan,
     parse_parallel_agent_plan,
@@ -71,7 +75,9 @@ PARALLEL_AGENT_TASK_KEY = "task"
 SUBMIT_PARALLEL_PLAN_TOOL_NAME = "submit_parallel_plan"
 MAX_SYNTHESIS_OUTPUT_TOKENS = 10000
 SYNTHESIS_INPUT_BUDGET_RATIO = 0.8
-PARALLEL_AGENT_EXECUTION_TIMEOUT_SECONDS = 35 * 60
+DEPENDENCY_CONTEXT_BUDGET_RATIO = 0.4
+PARALLEL_AGENT_EXECUTION_TIMEOUT_SECONDS = 35 * 60 * MAX_PARALLEL_AGENTS
+PARALLEL_AGENT_DEPENDENCIES_KEY = "depends_on"
 
 
 class ParallelAgentToolOverrideKwargs(BaseModel):
@@ -89,9 +95,10 @@ class ParallelAgentTool(Tool[ParallelAgentToolOverrideKwargs]):
     NAME = "parallel_agents"
     DISPLAY_NAME = "Parallel Agents"
     DESCRIPTION = (
-        "Split a complex, multi-part objective into isolated tasks, run up to five "
-        "read-only worker agents in parallel, and synthesize their reports. Pass the "
-        "complete delegated objective. Call this tool alone."
+        "Split a complex objective into up to five read-only worker tasks. Run "
+        "independent tasks in parallel and dependent tasks sequentially, then "
+        "synthesize their reports. Pass the complete delegated objective. Call this "
+        "tool alone."
     )
 
     def __init__(
@@ -225,7 +232,7 @@ class ParallelAgentTool(Tool[ParallelAgentToolOverrideKwargs]):
             "type": "function",
             "function": {
                 "name": SUBMIT_PARALLEL_PLAN_TOOL_NAME,
-                "description": "Submit the independent worker task plan.",
+                "description": "Submit the worker execution plan.",
                 "parameters": ParallelAgentPlan.model_json_schema(),
             },
         }
@@ -350,6 +357,103 @@ class ParallelAgentTool(Tool[ParallelAgentToolOverrideKwargs]):
                 message_type=MessageType.USER,
             ),
         ]
+
+    def _build_dependency_context(
+        self,
+        *,
+        plan: ParallelAgentPlan,
+        task_index: int,
+        reports: list[str | None],
+        token_counter: Callable[[str], int],
+    ) -> str | None:
+        dependencies = plan.tasks[task_index].depends_on
+        if not dependencies:
+            return None
+
+        total_budget = max(
+            500,
+            int(self._llm.config.max_input_tokens * DEPENDENCY_CONTEXT_BUDGET_RATIO),
+        )
+        report_budget = max(100, total_budget // len(dependencies))
+        dependency_reports = []
+        for dependency in dependencies:
+            dependency_task = plan.tasks[dependency - 1]
+            report = reports[dependency - 1] or "Worker did not produce a report."
+            dependency_reports.append(
+                f"## Task {dependency}: {dependency_task.title}\n"
+                + truncate_text_to_token_budget(
+                    report,
+                    report_budget,
+                    token_counter,
+                )
+            )
+        return "\n\n".join(dependency_reports)
+
+    def _run_worker_plan(
+        self,
+        *,
+        plan: ParallelAgentPlan,
+        worker_calls: list[ToolCallKickoff],
+        token_counter: Callable[[str], int],
+    ) -> CombinedResearchAgentCallResult:
+        from onyx.tools.fake_tools.research_agent import run_research_agent_calls
+
+        if self._state_container is None:
+            raise RuntimeError("ParallelAgentTool runtime was not configured")
+
+        reports: list[str | None] = [None] * len(plan.tasks)
+        citation_mapping = self._state_container.get_citation_to_doc()
+        reasoning_effort = (
+            self._reasoning_effort
+            if self._reasoning_effort is not ReasoningEffort.AUTO
+            else ReasoningEffort.LOW
+        )
+        is_reasoning_model = model_is_reasoning_model(
+            self._llm.config.model_name,
+            self._llm.config.model_provider,
+        )
+
+        for task_indexes in build_parallel_agent_execution_batches(plan):
+            self._raise_if_cancelled()
+            runtime_calls = []
+            for task_index in task_indexes:
+                call = worker_calls[task_index]
+                runtime_arguments = dict(call.tool_args)
+                dependency_context = self._build_dependency_context(
+                    plan=plan,
+                    task_index=task_index,
+                    reports=reports,
+                    token_counter=token_counter,
+                )
+                if dependency_context:
+                    runtime_arguments[RESEARCH_AGENT_CONTEXT_KEY] = dependency_context
+                runtime_calls.append(
+                    call.model_copy(update={"tool_args": runtime_arguments})
+                )
+
+            batch_results = run_research_agent_calls(
+                research_agent_calls=runtime_calls,
+                parent_tool_call_ids=[call.tool_call_id for call in runtime_calls],
+                tools=self._worker_tools,
+                emitter=self.emitter,
+                state_container=self._state_container,
+                llm=self._llm,
+                is_reasoning_model=is_reasoning_model,
+                token_counter=token_counter,
+                citation_mapping=citation_mapping,
+                user_identity=self._user_identity,
+                reasoning_effort=reasoning_effort,
+                cancellation_check=self.emitter.is_cancelled,
+                llm_flow=LLMFlow.PARALLEL_AGENT_WORKER,
+            )
+            for result_index, task_index in enumerate(task_indexes):
+                reports[task_index] = batch_results.intermediate_reports[result_index]
+            citation_mapping = batch_results.citation_mapping
+
+        return CombinedResearchAgentCallResult(
+            intermediate_reports=reports,
+            citation_mapping=citation_mapping,
+        )
 
     def _synthesize(
         self,
@@ -510,6 +614,7 @@ class ParallelAgentTool(Tool[ParallelAgentToolOverrideKwargs]):
                 tool_args={
                     RESEARCH_AGENT_TASK_KEY: task.instruction,
                     "title": task.title,
+                    PARALLEL_AGENT_DEPENDENCIES_KEY: task.depends_on,
                 },
                 placement=Placement(
                     turn_index=placement.turn_index,
@@ -519,29 +624,10 @@ class ParallelAgentTool(Tool[ParallelAgentToolOverrideKwargs]):
             for index, task in enumerate(plan.tasks, start=1)
         ]
 
-        from onyx.tools.fake_tools.research_agent import run_research_agent_calls
-
-        worker_results = run_research_agent_calls(
-            research_agent_calls=worker_calls,
-            parent_tool_call_ids=[call.tool_call_id for call in worker_calls],
-            tools=self._worker_tools,
-            emitter=self.emitter,
-            state_container=self._state_container,
-            llm=self._llm,
-            is_reasoning_model=model_is_reasoning_model(
-                self._llm.config.model_name,
-                self._llm.config.model_provider,
-            ),
+        worker_results = self._run_worker_plan(
+            plan=plan,
+            worker_calls=worker_calls,
             token_counter=token_counter,
-            citation_mapping=self._state_container.get_citation_to_doc(),
-            user_identity=self._user_identity,
-            reasoning_effort=(
-                self._reasoning_effort
-                if self._reasoning_effort is not ReasoningEffort.AUTO
-                else ReasoningEffort.LOW
-            ),
-            cancellation_check=self.emitter.is_cancelled,
-            llm_flow=LLMFlow.PARALLEL_AGENT_WORKER,
         )
         self._raise_if_cancelled()
 

@@ -22,6 +22,7 @@ from onyx.configs.chat_configs import DR_REPORT_LLM_TIMEOUT_S
 from onyx.configs.constants import MessageType
 from onyx.context.search.models import SearchDocsResponse
 from onyx.deep_research.dr_mock_tools import (
+    RESEARCH_AGENT_CONTEXT_KEY,
     RESEARCH_AGENT_TASK_KEY,
     THINK_TOOL_RESPONSE_MESSAGE,
     THINK_TOOL_RESPONSE_TOKEN_COUNT,
@@ -103,6 +104,29 @@ def raise_if_research_agent_cancelled(
 ) -> None:
     if cancellation_check and cancellation_check():
         raise ResearchAgentCancelled
+
+
+def build_research_agent_request(
+    research_topic: str,
+    raw_research_context: object,
+) -> str:
+    if not isinstance(raw_research_context, str) or not raw_research_context.strip():
+        return research_topic
+    return (
+        f"{research_topic}\n\n"
+        "Use these completed dependency reports as input:\n\n"
+        f"{raw_research_context.strip()}"
+    )
+
+
+def create_research_agent_citation_processor(
+    initial_citation_mapping: CitationMapping | None,
+) -> DynamicCitationProcessor:
+    citation_processor = DynamicCitationProcessor(
+        citation_mode=CitationMode.KEEP_MARKERS
+    )
+    citation_processor.update_citation_mapping(initial_citation_mapping or {})
+    return citation_processor
 
 
 def generate_intermediate_report(
@@ -244,6 +268,7 @@ def run_research_agent_call(
     reasoning_effort: ReasoningEffort = ReasoningEffort.LOW,
     cancellation_check: Callable[[], bool] | None = None,
     llm_flow: LLMFlow = LLMFlow.CHAT_RESPONSE,
+    initial_citation_mapping: CitationMapping | None = None,
 ) -> ResearchAgentCallResult | None:
     turn_index = research_agent_call.placement.turn_index
     tab_index = research_agent_call.placement.tab_index
@@ -258,8 +283,8 @@ def run_research_agent_call(
             # KEEP_MARKERS preserves citation markers like [1], [2] in the text unchanged
             # while tracking which documents were cited via get_seen_citations().
             # This allows collapse_citations() to later renumber them in the final report.
-            citation_processor = DynamicCitationProcessor(
-                citation_mode=CitationMode.KEEP_MARKERS
+            citation_processor = create_research_agent_citation_processor(
+                initial_citation_mapping
             )
 
             research_cycle_count = 0
@@ -269,7 +294,10 @@ def run_research_agent_call(
             just_ran_web_search = False
 
             # If this fails to parse, we can't run the loop anyway, let this one fail in that case
-            research_topic = research_agent_call.tool_args[RESEARCH_AGENT_TASK_KEY]
+            research_topic = cast(
+                str,
+                research_agent_call.tool_args[RESEARCH_AGENT_TASK_KEY],
+            )
 
             emitter.emit(
                 Packet(
@@ -278,9 +306,13 @@ def run_research_agent_call(
                 )
             )
 
+            research_request = build_research_agent_request(
+                research_topic,
+                research_agent_call.tool_args.get(RESEARCH_AGENT_CONTEXT_KEY),
+            )
             initial_user_message = ChatMessageSimple(
-                message=research_topic,
-                token_count=token_counter(research_topic),
+                message=research_request,
+                token_count=token_counter(research_request),
                 message_type=MessageType.USER,
             )
             msg_history: list[ChatMessageSimple] = [initial_user_message]
@@ -725,6 +757,7 @@ def run_research_agent_calls(
                 reasoning_effort,
                 cancellation_check,
                 llm_flow,
+                citation_mapping,
             ),
         )
         for research_agent_call, parent_tool_call_id in zip(

@@ -1,19 +1,20 @@
 PARALLEL_AGENT_PLANNER_PROMPT = """
-You are a planner for parallel agent execution.
+You are a planner for multi-agent execution.
 
-Split the delegated objective into independent tasks that isolated workers can complete.
-Use the smallest useful number of workers. Use no more than five workers.
+Split the delegated objective into tasks for no more than five workers. Use the smallest useful number of workers.
 
-Each worker receives only its own instruction. Each instruction must therefore include all required context from the original request.
-Avoid overlapping tasks. Do not split work that has strict sequential dependencies.
-If parallel work would not help, create one complete task.
+Each worker receives its instruction. A dependent worker also receives the completed reports from the tasks in its depends_on list.
+Use one-based task numbers in depends_on. A task can depend only on earlier tasks.
+Tasks with no unfinished dependencies run in parallel. Add dependencies only when a later task needs an earlier result.
+Use a sequential chain when each step needs the previous result. Parallel and sequential tasks can exist in one plan.
+Avoid overlapping tasks. If delegation would not help, create one complete task.
 
 You must call the submit_parallel_plan tool. Do not answer the request.
 """.strip()
 
 
 PARALLEL_AGENT_SYNTHESIS_PROMPT = """
-You synthesize reports from isolated worker agents.
+You synthesize reports from worker agents.
 
 Produce one accurate, coherent result for the delegated objective. Resolve conflicts between reports. Preserve important constraints from the original request. Do not mention the orchestration system or the workers unless the user asks.
 

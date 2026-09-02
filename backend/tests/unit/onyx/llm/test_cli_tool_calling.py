@@ -72,6 +72,38 @@ def test_parses_advertised_parallel_agents_call() -> None:
     assert calls[0].arguments == {"task": "Compare A & B."}
 
 
+def test_parses_sequential_agent_plan_arguments() -> None:
+    plan_tool = {
+        "type": "function",
+        "function": {
+            "name": "submit_parallel_plan",
+            "description": "Submit a worker plan.",
+            "parameters": {"type": "object"},
+        },
+    }
+    calls = parse_cli_tool_calls(
+        '<function_calls><invoke name="submit_parallel_plan">'
+        '<parameter name="tasks" string="false">'
+        '[{"title":"Research","instruction":"Find facts","depends_on":[]},'
+        '{"title":"Review","instruction":"Check facts","depends_on":[1]}]'
+        "</parameter></invoke></function_calls>",
+        [plan_tool],
+    )
+
+    assert calls[0].arguments["tasks"] == [
+        {
+            "title": "Research",
+            "instruction": "Find facts",
+            "depends_on": [],
+        },
+        {
+            "title": "Review",
+            "instruction": "Check facts",
+            "depends_on": [1],
+        },
+    ]
+
+
 def test_rejects_unadvertised_cli_tool_call() -> None:
     calls = parse_cli_tool_calls(
         '<function_calls><invoke name="unknown"></invoke></function_calls>',

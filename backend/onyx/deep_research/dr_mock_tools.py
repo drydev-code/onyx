@@ -3,6 +3,7 @@ GENERATE_PLAN_TOOL_NAME = "generate_plan"
 RESEARCH_AGENT_IN_CODE_ID = "ResearchAgent"
 RESEARCH_AGENT_TOOL_NAME = "research_agent"
 RESEARCH_AGENT_TASK_KEY = "task"
+RESEARCH_AGENT_CONTEXT_KEY = "context"
 
 GENERATE_REPORT_TOOL_NAME = "generate_report"
 

@@ -71,6 +71,7 @@ from onyx.tools.tool_implementations.images.image_generation_tool import (
 from onyx.tools.tool_implementations.memory.memory_tool import MemoryTool
 from onyx.tools.tool_implementations.open_url.open_url_tool import OpenURLTool
 from onyx.tools.tool_implementations.parallel_agents.parallel_agent_tool import (
+    PARALLEL_AGENT_DEPENDENCIES_KEY,
     ParallelAgentTool,
 )
 from onyx.tools.tool_implementations.python.python_tool import PythonTool
@@ -481,7 +482,13 @@ def create_parallel_agent_packets(
             str,
             worker_call.tool_call_arguments.get(RESEARCH_AGENT_TASK_KEY) or "",
         )
-        plan_lines.append(f"{index}. **{title}** — {instruction}")
+        dependencies = worker_call.tool_call_arguments.get(
+            PARALLEL_AGENT_DEPENDENCIES_KEY
+        )
+        dependency_text = ""
+        if isinstance(dependencies, list) and dependencies:
+            dependency_text = f" (after {', '.join(map(str, dependencies))})"
+        plan_lines.append(f"{index}. **{title}**{dependency_text} — {instruction}")
 
     plan_placement = Placement(
         turn_index=turn_index,

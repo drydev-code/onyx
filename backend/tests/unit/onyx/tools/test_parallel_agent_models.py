@@ -5,6 +5,7 @@ from onyx.context.search.models import SavedSearchDoc
 from onyx.tools.tool_implementations.parallel_agents.models import (
     ParallelAgentPlan,
     ParallelAgentTask,
+    build_parallel_agent_execution_batches,
     build_parallel_agent_search_response,
     format_parallel_agent_plan,
     parse_parallel_agent_plan,
@@ -48,6 +49,50 @@ def test_parallel_agent_tool_arguments_cap_planner_output_at_five_tasks() -> Non
     )
 
     assert len(plan.tasks) == 5
+
+
+def test_parallel_agent_plan_builds_parallel_and_sequential_batches() -> None:
+    plan = ParallelAgentPlan(
+        tasks=[
+            ParallelAgentTask(title="First", instruction="Do first"),
+            ParallelAgentTask(title="Second", instruction="Do second"),
+            ParallelAgentTask(
+                title="Combine",
+                instruction="Use both results",
+                depends_on=[2, 1, 1],
+            ),
+            ParallelAgentTask(
+                title="Review",
+                instruction="Review the combined result",
+                depends_on=[3],
+            ),
+        ]
+    )
+
+    assert plan.tasks[2].depends_on == [1, 2]
+    assert build_parallel_agent_execution_batches(plan) == [[0, 1], [2], [3]]
+    assert "3. **Combine** (after 1, 2)" in format_parallel_agent_plan(plan)
+
+
+@pytest.mark.parametrize("dependency", [0, -1, 1, 2])
+def test_parallel_agent_plan_rejects_invalid_dependencies(dependency: int) -> None:
+    with pytest.raises(ValidationError):
+        tasks = [ParallelAgentTask(title="First", instruction="Do first")]
+        if dependency == 2:
+            tasks.append(
+                ParallelAgentTask(
+                    title="Second",
+                    instruction="Do second",
+                    depends_on=[2],
+                )
+            )
+        else:
+            tasks[0] = ParallelAgentTask(
+                title="First",
+                instruction="Do first",
+                depends_on=[dependency],
+            )
+        ParallelAgentPlan(tasks=tasks)
 
 
 def test_truncate_text_to_token_budget_marks_truncated_content() -> None:

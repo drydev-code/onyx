@@ -57,6 +57,7 @@ def test_parallel_agent_replay_restores_plan_workers_and_synthesis() -> None:
     second_worker.tool_call_arguments = {
         "title": "Second task",
         "task": "Inspect the second requirement.",
+        "depends_on": [1],
     }
     second_worker.tool_call_response = "Second report"
     second_worker.tool_call_children = []
@@ -82,6 +83,7 @@ def test_parallel_agent_replay_restores_plan_workers_and_synthesis() -> None:
     assert isinstance(packets[1].obj, DeepResearchPlanStart)
     assert isinstance(packets[2].obj, DeepResearchPlanDelta)
     assert "First task" in packets[2].obj.content
+    assert "Second task** (after 1)" in packets[2].obj.content
 
     worker_starts = [
         packet for packet in packets if isinstance(packet.obj, ResearchAgentStart)
