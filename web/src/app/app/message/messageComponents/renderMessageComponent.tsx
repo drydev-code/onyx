@@ -31,6 +31,7 @@ import { DeepResearchPlanRenderer } from "./timeline/renderers/deepresearch/Deep
 import { ResearchAgentRenderer } from "./timeline/renderers/deepresearch/ResearchAgentRenderer";
 import { WebSearchToolRenderer } from "./timeline/renderers/search/WebSearchToolRenderer";
 import { InternalSearchToolRenderer } from "./timeline/renderers/search/InternalSearchToolRenderer";
+import { CollaborationRenderer } from "./timeline/renderers/collaboration/CollaborationRenderer";
 
 // Different types of chat packets using discriminated unions
 interface GroupedPackets {
@@ -114,6 +115,10 @@ function isResearchAgentPacket(packet: Packet) {
   );
 }
 
+function isCollaborationPacket(packet: Packet) {
+  return packet.obj.type === PacketType.COLLABORATION_EVENT;
+}
+
 export function findRenderer(
   groupedPackets: GroupedPackets
 ): MessageRenderer<any, any> | null {
@@ -134,6 +139,9 @@ export function findRenderer(
   }
   if (isCodingAgentPackets(groupedPackets.packets)) {
     return CodingAgentRenderer;
+  }
+  if (groupedPackets.packets.some((packet) => isCollaborationPacket(packet))) {
+    return CollaborationRenderer;
   }
 
   // Standard tool checks

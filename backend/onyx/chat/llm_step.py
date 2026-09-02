@@ -61,6 +61,10 @@ from onyx.server.query_and_chat.streaming_models import (
     ReasoningDelta,
     ReasoningDone,
     ReasoningStart,
+    SectionEnd,
+)
+from onyx.server.query_and_chat.streaming_models import (
+    CollaborationEvent as CollaborationEventPacket,
 )
 from onyx.tools.models import ToolCallKickoff
 from onyx.tools.tool_name import sanitize_tool_name
@@ -1069,7 +1073,12 @@ def _increment_turns(
 
 
 def _delta_has_action(delta: Delta) -> bool:
-    return bool(delta.content or delta.reasoning_content or delta.tool_calls)
+    return bool(
+        delta.content
+        or delta.reasoning_content
+        or delta.tool_calls
+        or delta.collaboration_events
+    )
 
 
 def run_llm_step_pkt_generator(
@@ -1183,6 +1192,8 @@ def run_llm_step_pkt_generator(
     accumulated_reasoning = ""
     accumulated_answer = ""
     accumulated_raw_answer = ""
+    collaboration_active = False
+    collaboration_placement: Placement | None = None
     stream_chunk_count = 0
     actionable_chunk_count = 0
     empty_chunk_count = 0
@@ -1252,6 +1263,24 @@ def run_llm_step_pkt_generator(
                     turn_index, sub_turn_index
                 )
                 reasoning_start = False
+
+        def _close_collaboration_if_active() -> Generator[Packet, None, None]:
+            """Close the collaboration step before another stream section."""
+            nonlocal collaboration_active
+            nonlocal collaboration_placement
+            nonlocal turn_index
+            nonlocal sub_turn_index
+
+            if collaboration_active and collaboration_placement is not None:
+                yield Packet(
+                    placement=collaboration_placement,
+                    obj=SectionEnd(),
+                )
+                turn_index, sub_turn_index = _increment_turns(
+                    turn_index, sub_turn_index
+                )
+                collaboration_active = False
+                collaboration_placement = None
 
         def _emit_content_chunk(content_chunk: str) -> Generator[Packet, None, None]:
             nonlocal accumulated_answer
@@ -1368,6 +1397,7 @@ def run_llm_step_pkt_generator(
                 not delta.content
                 and delta.reasoning_content is None
                 and not delta.tool_calls
+                and not delta.collaboration_events
             ):
                 empty_chunk_count += 1
                 logger.warning(
@@ -1396,6 +1426,43 @@ def run_llm_step_pkt_generator(
                 if modified_delta is None:
                     continue
                 delta = modified_delta
+
+            if delta.collaboration_events:
+                yield from _close_reasoning_if_active()
+
+                if not collaboration_active:
+                    current_answer_placement = (
+                        turn_index,
+                        sub_turn_index,
+                    )
+                    if last_answer_start_placement == current_answer_placement:
+                        yield Packet(
+                            placement=_current_placement(),
+                            obj=SectionEnd(),
+                        )
+                        turn_index, sub_turn_index = _increment_turns(
+                            turn_index, sub_turn_index
+                        )
+                    collaboration_placement = _current_placement()
+                    collaboration_active = True
+
+                assert collaboration_placement is not None
+                for collaboration_event in delta.collaboration_events:
+                    if state_container:
+                        state_container.add_collaboration_event(
+                            collaboration_event.model_dump()
+                        )
+                    yield Packet(
+                        placement=collaboration_placement,
+                        obj=CollaborationEventPacket(
+                            **collaboration_event.model_dump()
+                        ),
+                    )
+
+            if collaboration_active and (
+                delta.reasoning_content or delta.content or delta.tool_calls
+            ):
+                yield from _close_collaboration_if_active()
 
             # Should only happen once, frontend does not expect multiple
             # ReasoningStart or ReasoningDone packets.
@@ -1435,9 +1502,7 @@ def run_llm_step_pkt_generator(
                         else None
                     )
                     bridge_category = (
-                        cli_bridge.get(tool_name)
-                        if cli_bridge and tool_name
-                        else None
+                        cli_bridge.get(tool_name) if cli_bridge and tool_name else None
                     )
                     if bridge_category:
                         # CLI-self-executed tool: emit rich packets directly
@@ -1499,6 +1564,7 @@ def run_llm_step_pkt_generator(
         )
         # Run the flush + recovery below while the span is still open, so the
         # span output recorded afterward reflects the answer the user received.
+        yield from _close_collaboration_if_active()
         yield from _close_reasoning_if_active()
 
         # Flush any remaining content from citation processor

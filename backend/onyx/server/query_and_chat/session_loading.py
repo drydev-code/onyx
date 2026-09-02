@@ -27,6 +27,7 @@ from onyx.server.query_and_chat.streaming_models import (
     CitationInfo,
     CodingAgentFinal,
     CodingAgentStart,
+    CollaborationEvent,
     CustomToolArgs,
     CustomToolDelta,
     CustomToolErrorInfo,
@@ -814,6 +815,28 @@ def translate_assistant_message_to_packets(
     if chat_message.tool_calls:
         max_tool_turn = max(tc.turn_number for tc in chat_message.tool_calls)
 
+    collaboration_turn_index: int | None = None
+    if chat_message.collaboration_events:
+        collaboration_turn_index = max_tool_turn + 1
+        collaboration_placement = Placement(turn_index=collaboration_turn_index)
+        for event_data in chat_message.collaboration_events:
+            try:
+                collaboration_event = CollaborationEvent(**event_data)
+            except ValidationError as error:
+                logger.warning(
+                    "Could not restore collaboration event for chat message %s: %s",
+                    chat_message.id,
+                    error,
+                )
+                continue
+            packet_list.append(
+                Packet(
+                    placement=collaboration_placement,
+                    obj=collaboration_event,
+                )
+            )
+        packet_list.append(Packet(placement=collaboration_placement, obj=SectionEnd()))
+
     citations = chat_message.citations
     citation_info_list: list[CitationInfo] = []
 
@@ -836,12 +859,18 @@ def translate_assistant_message_to_packets(
         )
 
     # Message comes after tool calls, with optional reasoning step beforehand
-    message_turn_index = max_tool_turn + 1
+    message_turn_index = (
+        collaboration_turn_index + 1
+        if collaboration_turn_index is not None
+        else max_tool_turn + 1
+    )
+    reasoning_turn_index: int | None = None
     if chat_message.reasoning_tokens:
+        reasoning_turn_index = message_turn_index
         packet_list.extend(
             create_reasoning_packets(
                 reasoning_text=chat_message.reasoning_tokens,
-                turn_index=message_turn_index,
+                turn_index=reasoning_turn_index,
             )
         )
         message_turn_index += 1
@@ -876,8 +905,10 @@ def translate_assistant_message_to_packets(
             max_tool_turn = max(tc.turn_number for tc in chat_message.tool_calls)
 
         final_turn_index = max_tool_turn
-        if chat_message.reasoning_tokens:
-            final_turn_index = max(final_turn_index, max_tool_turn + 1)
+        if collaboration_turn_index is not None:
+            final_turn_index = max(final_turn_index, collaboration_turn_index)
+        if reasoning_turn_index is not None:
+            final_turn_index = max(final_turn_index, reasoning_turn_index)
         if chat_message.message:
             final_turn_index = max(final_turn_index, message_turn_index)
         if citation_info_list:

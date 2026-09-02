@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any, List, Literal
 
 from pydantic import BaseModel, Field
 
@@ -28,11 +28,30 @@ class ChatCompletionDeltaToolCall(BaseModel):
     function: FunctionCall | None = None
 
 
+class CollaborationAgentState(BaseModel):
+    status: str
+    message: str | None = None
+
+
+class CollaborationEvent(BaseModel):
+    """One provider-native collaboration lifecycle event."""
+
+    item_id: str
+    phase: Literal["started", "completed"]
+    tool: str
+    sender_thread_id: str | None = None
+    receiver_thread_ids: list[str] = Field(default_factory=list)
+    prompt: str | None = None
+    agents_states: dict[str, CollaborationAgentState] = Field(default_factory=dict)
+    status: str
+
+
 class Delta(BaseModel):
     content: str | None = None
     reasoning_content: str | None = None
     thinking_blocks: List[AnyThinkingBlock] | None = None
     tool_calls: List[ChatCompletionDeltaToolCall] = Field(default_factory=list)
+    collaboration_events: list[CollaborationEvent] = Field(default_factory=list)
 
 
 class StreamingChoice(BaseModel):

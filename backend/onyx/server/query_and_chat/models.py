@@ -227,6 +227,7 @@ class ChatMessageDetail(BaseModel):
     latest_child_message: int | None = None
     message: str
     reasoning_tokens: str | None = None
+    collaboration_events: list[dict[str, Any]] | None = None
     message_type: MessageType
     context_docs: list[SavedSearchDoc] | None = None
     # Dict mapping citation number to document_id
