@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Literal, cast
 
 from pydantic import ValidationError
@@ -78,6 +79,48 @@ from onyx.tools.tool_implementations.web_search.web_search_tool import WebSearch
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
+
+_LEGACY_COLLABORATION_BLOCK = re.compile(
+    r"(?:\n\n)?---\n\n### 🔧 `collab_tool_call`\n\n```json\n"
+    r"(?P<payload>.*?)\n```\n?",
+    re.DOTALL,
+)
+
+
+def _extract_legacy_collaboration_events(
+    reasoning_text: str,
+) -> tuple[str | None, list[CollaborationEvent]]:
+    """Convert collaboration blocks saved before structured events existed."""
+    events: list[CollaborationEvent] = []
+
+    def replace_block(match: re.Match[str]) -> str:
+        try:
+            payload = json.loads(match.group("payload"))
+            if (
+                not isinstance(payload, dict)
+                or payload.get("type") != "collab_tool_call"
+            ):
+                return match.group(0)
+
+            status = str(payload.get("status") or "completed")
+            events.append(
+                CollaborationEvent(
+                    item_id=str(payload.get("id") or "legacy_collaboration"),
+                    phase="started" if status == "in_progress" else "completed",
+                    tool=str(payload.get("tool") or "unknown"),
+                    sender_thread_id=payload.get("sender_thread_id"),
+                    receiver_thread_ids=payload.get("receiver_thread_ids") or [],
+                    prompt=payload.get("prompt"),
+                    agents_states=payload.get("agents_states") or {},
+                    status=status,
+                )
+            )
+        except (json.JSONDecodeError, TypeError, ValidationError):
+            return match.group(0)
+        return ""
+
+    remaining_reasoning = _LEGACY_COLLABORATION_BLOCK.sub(replace_block, reasoning_text)
+    return remaining_reasoning.strip() or None, events
 
 
 def create_message_packets(
@@ -1029,13 +1072,11 @@ def translate_assistant_message_to_packets(
     if chat_message.tool_calls:
         max_tool_turn = max(tc.turn_number for tc in chat_message.tool_calls)
 
-    collaboration_turn_index: int | None = None
+    collaboration_events: list[CollaborationEvent] = []
     if chat_message.collaboration_events:
-        collaboration_turn_index = max_tool_turn + 1
-        collaboration_placement = Placement(turn_index=collaboration_turn_index)
         for event_data in chat_message.collaboration_events:
             try:
-                collaboration_event = CollaborationEvent(**event_data)
+                collaboration_events.append(CollaborationEvent(**event_data))
             except ValidationError as error:
                 logger.warning(
                     "Could not restore collaboration event for chat message %s: %s",
@@ -1043,6 +1084,20 @@ def translate_assistant_message_to_packets(
                     error,
                 )
                 continue
+
+    reasoning_text = chat_message.reasoning_tokens
+    if reasoning_text:
+        reasoning_text, legacy_events = _extract_legacy_collaboration_events(
+            reasoning_text
+        )
+        if not collaboration_events:
+            collaboration_events = legacy_events
+
+    collaboration_turn_index: int | None = None
+    if collaboration_events:
+        collaboration_turn_index = max_tool_turn + 1
+        collaboration_placement = Placement(turn_index=collaboration_turn_index)
+        for collaboration_event in collaboration_events:
             packet_list.append(
                 Packet(
                     placement=collaboration_placement,
@@ -1079,11 +1134,11 @@ def translate_assistant_message_to_packets(
         else max_tool_turn + 1
     )
     reasoning_turn_index: int | None = None
-    if chat_message.reasoning_tokens:
+    if reasoning_text:
         reasoning_turn_index = message_turn_index
         packet_list.extend(
             create_reasoning_packets(
-                reasoning_text=chat_message.reasoning_tokens,
+                reasoning_text=reasoning_text,
                 turn_index=reasoning_turn_index,
             )
         )
