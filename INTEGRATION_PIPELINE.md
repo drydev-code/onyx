@@ -132,6 +132,7 @@ main (upstream mirror)
         +-- feature/codex
         +-- feature/claude-code
         +-- feature/virtual-llm-routing
+        +-- feature/parallel-agent-orchestration
         +-- integration/fixes (post-feature compatibility fixes)
         |
         +-- integration/merged (all inputs merged in the listed order)
