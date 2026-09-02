@@ -424,10 +424,7 @@ export type ReasoningObj =
   | SectionEnd
   | PacketError;
 
-export type CollaborationObj =
-  | CollaborationEvent
-  | SectionEnd
-  | PacketError;
+export type CollaborationObj = CollaborationEvent | SectionEnd | PacketError;
 
 export type CitationObj =
   | CitationStart
