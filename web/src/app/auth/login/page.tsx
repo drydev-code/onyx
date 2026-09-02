@@ -63,6 +63,7 @@ export default async function Page(props: PageProps) {
     // tab); otherwise land on the main app page. The `from=login` query
     // parameter helps prevent redirect loops.
     const validatedNextUrl = validateInternalRedirect(nextUrl);
+    // SAFETY: The validator and fixed fallback permit only local routes.
     return redirect((validatedNextUrl ?? "/app?from=login") as Route);
   }
 

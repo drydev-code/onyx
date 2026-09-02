@@ -15,7 +15,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@opal/components";
 import { InputErrorText } from "@opal/layouts";
 import { SvgGoogle } from "@opal/logos";
@@ -25,20 +25,24 @@ import { useTranslations } from "next-intl";
 interface ProviderSignInButtonProps {
   provider: SSOProviderOption;
   nextUrl: string | null;
+  autoRedirect?: boolean;
 }
 
 export default function ProviderSignInButton({
   provider,
   nextUrl,
+  autoRedirect = false,
 }: ProviderSignInButtonProps) {
   const t = useTranslations("auth");
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const redirectStarted = useRef(false);
 
   const isGoogle = provider.providerType === "GOOGLE_OAUTH";
 
-  async function handleClick() {
-    if (isRedirecting) return;
+  const handleClick = useCallback(async () => {
+    if (redirectStarted.current) return;
+    redirectStarted.current = true;
     setIsRedirecting(true);
     setError(null);
     try {
@@ -59,10 +63,17 @@ export default function ProviderSignInButton({
       window.location.href = data.authorization_url;
     } catch (exc) {
       // Re-enable the button so the user can retry.
+      redirectStarted.current = false;
       setError(exc instanceof Error ? exc.message : String(exc));
       setIsRedirecting(false);
     }
-  }
+  }, [nextUrl, provider.authorizeUrl, t]);
+
+  useEffect(() => {
+    if (autoRedirect) {
+      void handleClick();
+    }
+  }, [autoRedirect, handleClick]);
 
   return (
     <>

@@ -10,6 +10,7 @@ import { useSendAuthRequiredMessage } from "@/lib/extension/hooks";
 import { Button, MessageCard } from "@opal/components";
 import { AuthLayouts } from "@opal/layouts";
 import { useTranslations } from "next-intl";
+import { shouldAutoRedirectToSSO } from "@/lib/auth/utils";
 
 interface LoginPageProps {
   authUrl: string | null;
@@ -38,6 +39,7 @@ export default function LoginPage({
   const ssoProviders = authTypeMetadata?.ssoProviders ?? [];
   // Kill switch off: hide password login/signup. Backend refuses regardless.
   const passwordAuthEnabled = authTypeMetadata?.passwordAuthEnabled !== false;
+  const autoRedirectToSSO = shouldAutoRedirectToSSO(authTypeMetadata);
 
   return (
     <div className="flex flex-col w-full justify-center">
@@ -81,6 +83,7 @@ export default function LoginPage({
                     key={provider.name}
                     provider={provider}
                     nextUrl={effectiveNextUrl}
+                    autoRedirect={autoRedirectToSSO}
                   />
                 ))}
               </div>
