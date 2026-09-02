@@ -22,7 +22,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from onyx.file_processing.pdf_ocr import RenderedPdf, RenderedPdfPage
 from onyx.llm.codex_cli import (
     _CODEX_DISABLE_WEB_TOOL_FLAGS,
     _CODEX_OUTPUT_MAX_CHARS,
@@ -32,7 +31,12 @@ from onyx.llm.codex_cli import (
     _format_codex_command_start,
 )
 from onyx.llm.model_response import ModelResponseStream
-from onyx.llm.models import FileAttachment, ReasoningEffort, UserMessage
+from onyx.llm.models import (
+    FileAttachment,
+    ReasoningEffort,
+    ToolChoiceOptions,
+    UserMessage,
+)
 
 PDF_FIXTURE = (
     Path(__file__).parents[1] / "file_processing" / "fixtures" / "with_image.pdf"
@@ -127,7 +131,63 @@ def test_stream_command_includes_instructions() -> None:
     assert instructions_found
 
 
-def test_stream_stages_pdf_and_passes_rendered_page_as_image() -> None:
+def test_stream_passes_parallel_agents_tool_protocol() -> None:
+    response_text = (
+        '<function_calls><invoke name="parallel_agents">'
+        '<parameter name="task" string="true">Research both markets.</parameter>'
+        "</invoke></function_calls>"
+    )
+    proc = _make_proc(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {"type": "agent_message", "text": response_text},
+                    }
+                ),
+                json.dumps({"type": "turn.completed"}),
+            ]
+        )
+        + "\n"
+    )
+    parallel_tool = {
+        "type": "function",
+        "function": {
+            "name": "parallel_agents",
+            "description": "Run independent workers.",
+            "parameters": {
+                "type": "object",
+                "properties": {"task": {"type": "string"}},
+                "required": ["task"],
+            },
+        },
+    }
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
+        with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
+            chunks = list(
+                _make_cli().stream(
+                    [UserMessage(content="Research this in parallel.")],
+                    tools=[parallel_tool],
+                    tool_choice=ToolChoiceOptions.AUTO,
+                )
+            )
+
+    prompt = mock_popen.call_args[0][0][-1]
+    assert "<onyx-tool-protocol>" in prompt
+    assert 'name="TOOL_NAME"' in prompt
+    assert '"name":"parallel_agents"' in prompt
+    assert "Do not replace it with a CLI-native agent" in prompt
+    tool_calls = [call for chunk in chunks for call in chunk.choice.delta.tool_calls]
+    assert len(tool_calls) == 1
+    assert tool_calls[0].function is not None
+    assert tool_calls[0].function.name == "parallel_agents"
+    assert json.loads(tool_calls[0].function.arguments or "{}") == {
+        "task": "Research both markets."
+    }
+
+
+def test_stream_passes_original_pdf_and_image_attachments() -> None:
     proc = _make_proc("")
     prompt = UserMessage(
         content="Read the scan.",
@@ -137,32 +197,29 @@ def test_stream_stages_pdf_and_passes_rendered_page_as_image() -> None:
                 filename="scan.pdf",
                 mime_type="application/pdf",
                 content=PDF_FIXTURE.read_bytes(),
-            )
+            ),
+            FileAttachment(
+                file_id="image-1",
+                filename="photo.png",
+                mime_type="image/png",
+                content=b"\x89PNG\r\n\x1a\noriginal",
+            ),
         ],
     )
 
-    rendered_pdf = RenderedPdf(
-        total_pages=1,
-        pages=[RenderedPdfPage(page_number=1, image_bytes=b"\xff\xd8\xff")],
-        omitted_page_count=0,
-    )
-    with patch(
-        "onyx.llm.cli_file_staging.render_pdf_pages_for_ocr",
-        return_value=rendered_pdf,
-    ):
-        with patch(
-            "onyx.llm.codex_cli.subprocess.Popen", return_value=proc
-        ) as mock_popen:
-            with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
-                list(_make_cli().stream([prompt]))
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
+        with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
+            list(_make_cli().stream([prompt]))
 
     cmd = mock_popen.call_args[0][0]
     workspace_path = cmd[cmd.index("-C") + 1]
     image_path = cmd[cmd.index("--image") + 1]
     final_prompt = cmd[-1]
-    assert image_path.endswith("scan.pdf-page-1.jpg")
+    assert image_path.endswith("002-photo.png")
+    assert "001-scan.pdf" in final_prompt
+    assert "002-photo.png" in final_prompt
     assert workspace_path in final_prompt
-    assert "read the rendered pages directly" in final_prompt
+    assert "did not extract, convert, render, or OCR" in final_prompt
 
 
 def test_stream_publishes_generated_pdf_before_workspace_cleanup() -> None:
@@ -192,19 +249,9 @@ def test_stream_publishes_generated_pdf_before_workspace_cleanup() -> None:
                 "onyx.llm.cli_file_staging.get_default_file_store",
                 return_value=file_store,
             ):
-                with patch(
-                    "onyx.llm.cli_file_staging.render_pdf_pages_for_ocr",
-                    return_value=RenderedPdf(
-                        total_pages=1,
-                        pages=[],
-                        omitted_page_count=0,
-                    ),
-                ):
-                    chunks = list(
-                        _make_cli().stream(
-                            [UserMessage(content="Create a PDF report.")]
-                        )
-                    )
+                chunks = list(
+                    _make_cli().stream([UserMessage(content="Create a PDF report.")])
+                )
 
     content = "".join(chunk.choice.delta.content or "" for chunk in chunks)
     generated_files = [

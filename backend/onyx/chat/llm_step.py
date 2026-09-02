@@ -1,4 +1,5 @@
 import json
+import mimetypes
 import re
 import time
 import uuid
@@ -10,7 +11,7 @@ from onyx.chat.chat_state import ChatStateContainer
 from onyx.chat.citation_processor import DynamicCitationProcessor
 from onyx.chat.emitter import Emitter
 from onyx.chat.incognito import current_turn_persists_content
-from onyx.chat.models import ChatMessageSimple, LlmStepResult
+from onyx.chat.models import ChatLoadedFile, ChatMessageSimple, LlmStepResult
 from onyx.chat.tool_call_args_streaming import maybe_emit_argument_delta
 from onyx.configs.app_configs import (
     ENABLE_AZURE_IMAGE_CAP,
@@ -97,6 +98,26 @@ _XML_PARAMETER_RE = re.compile(
 )
 _FUNCTION_CALLS_OPEN_MARKER = "<function_calls"
 _FUNCTION_CALLS_CLOSE_MARKER = "</function_calls>"
+
+
+def _to_cli_file_attachment(file: ChatLoadedFile) -> FileAttachment:
+    filename = file.filename or f"file_{file.file_id}"
+    if file.file_type == ChatFileType.IMAGE:
+        try:
+            mime_type = get_image_type_from_bytes(file.content)
+        except ValueError:
+            mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    elif file.content.startswith(b"%PDF-"):
+        mime_type = "application/pdf"
+    else:
+        mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+    return FileAttachment(
+        file_id=file.file_id,
+        filename=filename,
+        mime_type=mime_type,
+        content=file.content,
+    )
 
 
 class _XmlToolCallContentFilter:
@@ -875,6 +896,19 @@ def translate_history_to_llm_format(
     """
     messages: list[ChatCompletionMessage] = []
     history_message_formatter = _get_history_message_formatter(llm_config)
+    is_cli_file_provider = llm_config.model_provider in _CLI_FILE_ATTACHMENT_PROVIDERS
+    cli_raw_file_ids = (
+        {
+            file.file_id
+            for message in history
+            for file in [
+                *(message.document_files or []),
+                *(message.image_files or []),
+            ]
+        }
+        if is_cli_file_provider
+        else set()
+    )
     # Note: cacheability is computed from pre-translation ChatMessageSimple types.
     # Some providers flatten tool history into plain assistant/user text, so this split
     # may be less semantically meaningful, but it remains safe and order-preserving.
@@ -886,7 +920,9 @@ def translate_history_to_llm_format(
     # provider 400, so replay a text marker instead. Admins can mark custom
     # vision models with the VISION flow type to keep images flowing.
     supports_image_input = True
-    if any(msg.message_type == MessageType.USER and msg.image_files for msg in history):
+    if not is_cli_file_provider and any(
+        msg.message_type == MessageType.USER and msg.image_files for msg in history
+    ):
         supports_image_input = model_supports_image_input(
             llm_config.model_name,
             llm_config.model_provider,
@@ -921,6 +957,11 @@ def translate_history_to_llm_format(
             )
 
     for idx, msg in enumerate(history):
+        if msg.file_id in cli_raw_file_ids:
+            # The original attachment is staged below. Do not also send the
+            # server-extracted representation to a CLI-backed provider.
+            continue
+
         # if the message is being added to the history
         if PROMPT_CACHE_CHAT_HISTORY and msg.message_type in [
             MessageType.SYSTEM,
@@ -943,20 +984,22 @@ def translate_history_to_llm_format(
             messages.append(system_msg)
 
         elif msg.message_type == MessageType.USER:
-            file_attachments: list[FileAttachment] | None = None
-            if (
-                msg.document_files
-                and llm_config.model_provider in _CLI_FILE_ATTACHMENT_PROVIDERS
-            ):
-                file_attachments = [
-                    FileAttachment(
-                        file_id=document.file_id,
-                        filename=document.filename or f"file_{document.file_id}.pdf",
-                        mime_type="application/pdf",
-                        content=document.content,
+            cli_files = [*(msg.document_files or []), *(msg.image_files or [])]
+            file_attachments = (
+                [_to_cli_file_attachment(file) for file in cli_files]
+                if is_cli_file_provider and cli_files
+                else None
+            )
+
+            if is_cli_file_provider:
+                messages.append(
+                    UserMessage(
+                        role="user",
+                        content=msg.message,
+                        file_attachments=file_attachments,
                     )
-                    for document in msg.document_files
-                ]
+                )
+                continue
 
             # Handle user messages with potential images
             if msg.image_files:

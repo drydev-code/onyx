@@ -31,6 +31,10 @@ from onyx.llm.cli_tool_bridge import (
     CATEGORY_INTERNAL_SEARCH,
     CATEGORY_INTERNET_SEARCH,
 )
+from onyx.llm.cli_tool_calling import (
+    append_cli_tool_instructions,
+    parse_cli_tool_calls,
+)
 from onyx.llm.interfaces import LLM, LanguageModelInput, LLMConfig, LLMUserIdentity
 from onyx.llm.model_response import (
     ChatCompletionDeltaToolCall,
@@ -181,6 +185,13 @@ def _messages_to_prompt(prompt: LanguageModelInput) -> str:
                 block.get("text", "") if isinstance(block, dict) else str(block)
                 for block in content
             )
+        tool_calls = dumped.get("tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            rendered_calls = json.dumps(tool_calls, ensure_ascii=False)
+            content = f"{content}\nTool calls: {rendered_calls}".strip()
+        if raw_role == "tool":
+            tool_call_id = dumped.get("tool_call_id", "unknown")
+            content = f"Tool response ({tool_call_id}): {content}"
         return (raw_role, content if isinstance(content, str) else str(content))
 
     if isinstance(prompt, list):
@@ -218,9 +229,8 @@ class ClaudeCodeCLI(LLM):
     Feature Support
     ---------------
     tools / tool_choice:
-        WARNING only. The CLI does not support function calling, but callers
-        may pass tools optimistically. The response will simply not contain
-        tool calls. A warning is logged so operators can see when this occurs.
+        Tool definitions are added to the prompt using Onyx's XML tool-call
+        protocol. The chat loop extracts and executes matching calls.
 
     structured_response_format:
         RAISES ``NotImplementedError``. Structured output is a hard contract
@@ -425,10 +435,13 @@ class ClaudeCodeCLI(LLM):
     def _prepare_cli_input(
         self,
         prompt: LanguageModelInput,
+        tools: list[dict] | None = None,
+        tool_choice: ToolChoice | None = None,
     ) -> tuple[str, str | None, str | None, str]:
         text_prompt = _messages_to_prompt(prompt)
         attachments = collect_file_attachments(prompt)
         pdf_authoring_requested = _prompt_requests_pdf_authoring(text_prompt)
+        text_prompt = append_cli_tool_instructions(text_prompt, tools, tool_choice)
         if not attachments and not pdf_authoring_requested:
             return text_prompt, None, None, ""
 
@@ -508,12 +521,7 @@ class ClaudeCodeCLI(LLM):
         user_identity: LLMUserIdentity | None = None,
         total_timeout_override: float | None = None,
     ) -> ModelResponse:
-        _ = (tool_choice, max_tokens, user_identity, total_timeout_override)
-        if tools:
-            logger.warning(
-                "Claude Code CLI does not support tool calling. "
-                "Tools parameter will be ignored."
-            )
+        _ = (max_tokens, user_identity, total_timeout_override)
         if structured_response_format:
             raise NotImplementedError(
                 "Claude Code CLI does not support structured_response_format. "
@@ -522,7 +530,7 @@ class ClaudeCodeCLI(LLM):
             )
 
         text_prompt, workspace_path, output_directory, allowed_builtin_tools = (
-            self._prepare_cli_input(prompt)
+            self._prepare_cli_input(prompt, tools, tool_choice)
         )
         timeout = timeout_override or self._timeout
 
@@ -697,12 +705,7 @@ class ClaudeCodeCLI(LLM):
         reasoning_effort: ReasoningEffort = ReasoningEffort.AUTO,
         user_identity: LLMUserIdentity | None = None,
     ) -> Iterator[ModelResponseStream]:
-        _ = (tool_choice, max_tokens, user_identity)
-        if tools:
-            logger.warning(
-                "Claude Code CLI does not support tool calling. "
-                "Tools parameter will be ignored."
-            )
+        _ = (max_tokens, user_identity)
         if structured_response_format:
             raise NotImplementedError(
                 "Claude Code CLI does not support structured_response_format. "
@@ -711,7 +714,7 @@ class ClaudeCodeCLI(LLM):
             )
 
         text_prompt, workspace_path, output_directory, allowed_builtin_tools = (
-            self._prepare_cli_input(prompt)
+            self._prepare_cli_input(prompt, tools, tool_choice)
         )
         timeout = timeout_override or self._timeout
         response_id = f"cli-{uuid.uuid4().hex[:12]}"
@@ -1296,6 +1299,30 @@ class ClaudeCodeCLI(LLM):
             if timed_out.is_set():
                 raise TimeoutError(
                     f"Claude Code CLI streaming timed out after {timeout}s"
+                )
+
+            parsed_tool_calls = parse_cli_tool_calls(accumulated_answer_text, tools)
+            if parsed_tool_calls:
+                yield ModelResponseStream(
+                    id=response_id,
+                    created=created,
+                    choice=StreamingChoice(
+                        index=0,
+                        delta=Delta(
+                            tool_calls=[
+                                ChatCompletionDeltaToolCall(
+                                    id=f"claude_tool_{uuid.uuid4().hex[:12]}",
+                                    index=index,
+                                    type="function",
+                                    function=FunctionCall(
+                                        name=tool_call.name,
+                                        arguments=json.dumps(tool_call.arguments),
+                                    ),
+                                )
+                                for index, tool_call in enumerate(parsed_tool_calls)
+                            ]
+                        ),
+                    ),
                 )
 
             if workspace_path is not None and output_directory is not None:

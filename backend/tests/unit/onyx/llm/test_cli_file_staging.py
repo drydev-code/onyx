@@ -21,7 +21,9 @@ PDF_FIXTURE = (
 )
 
 
-def test_prepare_workspace_stages_pdf_and_rendered_page(tmp_path: Path) -> None:
+def test_prepare_workspace_stages_original_pdf_without_rendering(
+    tmp_path: Path,
+) -> None:
     pdf_bytes = PDF_FIXTURE.read_bytes()
     prompt = UserMessage(
         content="Run OCR.",
@@ -41,16 +43,12 @@ def test_prepare_workspace_stages_pdf_and_rendered_page(tmp_path: Path) -> None:
     assert staged_path.parent == tmp_path / "attachments"
     assert staged_path.name == "001-unsafe_report.pdf"
     assert staged_path.read_bytes() == pdf_bytes
-    assert [image.page_number for image in workspace.rendered_images] == [1]
-    assert (
-        Path(workspace.rendered_images[0].path).read_bytes().startswith(b"\xff\xd8\xff")
-    )
+    assert not (tmp_path / "rendered-pdf-pages").exists()
 
     augmented_prompt = append_cli_file_instructions("Run OCR.", workspace)
     assert str(staged_path) in augmented_prompt
-    assert "page 1 of 1" in augmented_prompt
-    assert "read the rendered pages directly" in augmented_prompt
-    assert "Do not run Python" in augmented_prompt
+    assert "original files directly" in augmented_prompt
+    assert "did not extract, convert, render, or OCR" in augmented_prompt
     assert "reportlab and Pillow" in augmented_prompt
     assert workspace.output_directory in augmented_prompt
     assert "Onyx will publish validated PDFs" in augmented_prompt
@@ -66,29 +64,31 @@ def test_materialize_data_url_images_writes_supported_image(tmp_path: Path) -> N
     assert Path(paths[0]).read_bytes() == png_bytes
 
 
-def test_prepare_workspace_caps_rendered_pages_across_pdfs(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(cli_file_staging, "PDF_OCR_MAX_PAGES", 1)
+def test_prepare_workspace_stages_all_original_attachments(tmp_path: Path) -> None:
     pdf_bytes = PDF_FIXTURE.read_bytes()
     prompt = UserMessage(
-        content="Read both scans.",
+        content="Read both files.",
         file_attachments=[
             FileAttachment(
-                file_id=f"pdf-{index}",
-                filename=f"scan-{index}.pdf",
+                file_id="pdf-1",
+                filename="scan.pdf",
                 mime_type="application/pdf",
                 content=pdf_bytes,
-            )
-            for index in range(2)
+            ),
+            FileAttachment(
+                file_id="image-1",
+                filename="photo.png",
+                mime_type="image/png",
+                content=b"\x89PNG\r\n\x1a\noriginal",
+            ),
         ],
     )
 
     workspace = prepare_cli_file_workspace(prompt, str(tmp_path))
 
     assert len(workspace.files) == 2
-    assert len(workspace.rendered_images) == 1
+    assert Path(workspace.files[0].path).read_bytes() == pdf_bytes
+    assert Path(workspace.files[1].path).read_bytes().endswith(b"original")
 
 
 def test_materialize_data_url_images_skips_remote_urls(tmp_path: Path) -> None:

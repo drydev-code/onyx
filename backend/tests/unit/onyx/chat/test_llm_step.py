@@ -276,6 +276,37 @@ class TestExtractToolCallsFromResponseText:
         )
         assert len(tool_calls) == 0
 
+    def test_extracts_parallel_agents_xml_call(self) -> None:
+        tool_definitions = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "parallel_agents",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"task": {"type": "string"}},
+                        "required": ["task"],
+                    },
+                },
+            }
+        ]
+        response_text = (
+            '<function_calls><invoke name="parallel_agents">'
+            '<parameter name="task" string="true">'
+            "Research both markets.</parameter>"
+            "</invoke></function_calls>"
+        )
+
+        tool_calls = extract_tool_calls_from_response_text(
+            response_text=response_text,
+            tool_definitions=tool_definitions,
+            placement=self._placement(),
+        )
+
+        assert len(tool_calls) == 1
+        assert tool_calls[0].tool_name == "parallel_agents"
+        assert tool_calls[0].tool_args == {"task": "Research both markets."}
+
 
 class TestExtractToolCallKickoffs:
     """Tests for the _extract_tool_call_kickoffs function."""
@@ -800,7 +831,9 @@ class TestCLIFileAttachments:
             LlmProviderNames.CLAUDE_CODE_CLI,
         ],
     )
-    def test_pdf_bytes_are_available_only_to_cli_wrappers(self, provider: str) -> None:
+    def test_original_attachment_bytes_are_available_to_cli_wrappers(
+        self, provider: str
+    ) -> None:
         pdf = ChatLoadedFile(
             file_id="pdf-1",
             content=b"%PDF-original",
@@ -809,13 +842,36 @@ class TestCLIFileAttachments:
             content_text="",
             token_count=0,
         )
+        text_file = ChatLoadedFile(
+            file_id="text-1",
+            content=b"original text bytes",
+            file_type=ChatFileType.PLAIN_TEXT,
+            filename="notes.txt",
+            content_text="original text bytes",
+            token_count=3,
+        )
+        image = ChatLoadedFile(
+            file_id="image-1",
+            content=b"\x89PNG\r\n\x1a\noriginal image bytes",
+            file_type=ChatFileType.IMAGE,
+            filename="photo.png",
+            content_text=None,
+            token_count=0,
+        )
         history = [
             ChatMessageSimple(
-                message="Run OCR",
+                message="SERVER-EXTRACTED PDF TEXT",
+                token_count=4,
+                message_type=MessageType.USER,
+                file_id="pdf-1",
+            ),
+            ChatMessageSimple(
+                message="Inspect the attachments",
                 token_count=3,
                 message_type=MessageType.USER,
-                document_files=[pdf],
-            )
+                document_files=[pdf, text_file],
+                image_files=[image],
+            ),
         ]
 
         translated = translate_history_to_llm_format(
@@ -824,9 +880,21 @@ class TestCLIFileAttachments:
         )
 
         assert isinstance(translated, list)
+        assert len(translated) == 1
         assert isinstance(translated[0], UserMessage)
         assert translated[0].file_attachments is not None
-        assert translated[0].file_attachments[0].content == b"%PDF-original"
+        assert isinstance(translated[0].content, str)
+        assert "SERVER-EXTRACTED" not in translated[0].content
+        assert [file.mime_type for file in translated[0].file_attachments] == [
+            "application/pdf",
+            "text/plain",
+            "image/png",
+        ]
+        assert [file.content for file in translated[0].file_attachments] == [
+            b"%PDF-original",
+            b"original text bytes",
+            b"\x89PNG\r\n\x1a\noriginal image bytes",
+        ]
         assert "file_attachments" not in translated[0].model_dump()
 
     def test_pdf_bytes_do_not_enter_standard_provider_requests(self) -> None:

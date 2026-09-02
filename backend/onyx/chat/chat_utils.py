@@ -782,11 +782,9 @@ def convert_chat_history(
                             # Text files (DOC, PLAIN_TEXT, TABULAR) are added as separate messages
                             text_files.append((loaded_file, file_descriptor))
 
-            document_files = [
-                loaded_file
-                for loaded_file, _ in text_files
-                if (loaded_file.filename or "").lower().endswith(".pdf")
-            ]
+            # Keep every original non-image attachment available for local CLI
+            # providers. Standard API providers continue to receive extracted text.
+            document_files = [loaded_file for loaded_file, _ in text_files]
 
             # Add text files as separate messages before the user message.
             # Each message is tagged with ``file_id`` so that forgotten files

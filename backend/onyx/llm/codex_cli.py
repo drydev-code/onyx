@@ -44,6 +44,10 @@ from onyx.llm.cli_file_staging import (
     prepare_cli_file_workspace,
     publish_cli_generated_pdfs,
 )
+from onyx.llm.cli_tool_calling import (
+    append_cli_tool_instructions,
+    parse_cli_tool_calls,
+)
 from onyx.llm.interfaces import LLM, LanguageModelInput, LLMConfig, LLMUserIdentity
 from onyx.llm.model_response import (
     ChatCompletionDeltaToolCall,
@@ -286,10 +290,17 @@ def _extract_system_user_and_images(
             content = "\n".join(text_parts)
         if not isinstance(content, str):
             content = str(content)
+        tool_calls = dumped.get("tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            rendered_calls = json.dumps(tool_calls, ensure_ascii=False)
+            content = f"{content}\nTool calls: {rendered_calls}".strip()
         if role == "system":
             system_parts.append(content)
         elif role == "assistant":
             conversation_parts.append(f"Assistant: {content}")
+        elif role == "tool":
+            tool_call_id = dumped.get("tool_call_id", "unknown")
+            conversation_parts.append(f"Tool response ({tool_call_id}): {content}")
         else:
             conversation_parts.append(content)
 
@@ -486,20 +497,25 @@ class CodexCLI(LLM):
     def _prepare_cli_input(
         prompt: LanguageModelInput,
         codex_home: str,
+        tools: list[dict] | None = None,
+        tool_choice: ToolChoice | None = None,
     ) -> tuple[str, str, str, list[str], str]:
         system_text, user_text, image_urls = _extract_system_user_and_images(prompt)
+        user_text = append_cli_tool_instructions(user_text, tools, tool_choice)
         workspace_path = os.path.join(codex_home, "workspace")
         prepared_workspace = prepare_cli_file_workspace(prompt, workspace_path)
         user_text = append_cli_file_instructions(user_text, prepared_workspace)
         direct_image_paths = materialize_data_url_images(image_urls, workspace_path)
-        rendered_pdf_paths = [
-            rendered_image.path for rendered_image in prepared_workspace.rendered_images
+        attachment_image_paths = [
+            staged_file.path
+            for staged_file in prepared_workspace.files
+            if staged_file.attachment.mime_type.startswith("image/")
         ]
         return (
             system_text,
             user_text,
             workspace_path,
-            direct_image_paths + rendered_pdf_paths,
+            attachment_image_paths + direct_image_paths,
             prepared_workspace.output_directory,
         )
 
@@ -535,8 +551,6 @@ class CodexCLI(LLM):
         total_timeout_override: float | None = None,
     ) -> ModelResponse:
         _ = (
-            tools,
-            tool_choice,
             structured_response_format,
             max_tokens,
             user_identity,
@@ -548,7 +562,7 @@ class CodexCLI(LLM):
         try:
             self._setup_auth(codex_home)
             system_text, user_text, workspace_path, image_paths, output_directory = (
-                self._prepare_cli_input(prompt, codex_home)
+                self._prepare_cli_input(prompt, codex_home, tools, tool_choice)
             )
         except Exception:
             shutil.rmtree(codex_home, ignore_errors=True)
@@ -693,7 +707,7 @@ class CodexCLI(LLM):
         reasoning_effort: ReasoningEffort = ReasoningEffort.AUTO,
         user_identity: LLMUserIdentity | None = None,
     ) -> Iterator[ModelResponseStream]:
-        _ = (tools, tool_choice, max_tokens, user_identity)
+        _ = (max_tokens, user_identity)
         if structured_response_format:
             raise NotImplementedError(
                 "Codex CLI does not support structured_response_format."
@@ -703,7 +717,7 @@ class CodexCLI(LLM):
         try:
             self._setup_auth(codex_home)
             system_text, user_text, workspace_path, image_paths, output_directory = (
-                self._prepare_cli_input(prompt, codex_home)
+                self._prepare_cli_input(prompt, codex_home, tools, tool_choice)
             )
         except Exception:
             shutil.rmtree(codex_home, ignore_errors=True)
@@ -921,6 +935,30 @@ class CodexCLI(LLM):
                     choice=StreamingChoice(
                         index=0,
                         delta=Delta(content=fallback_text),
+                    ),
+                )
+
+            parsed_tool_calls = parse_cli_tool_calls(accumulated_answer_text, tools)
+            if parsed_tool_calls:
+                yield ModelResponseStream(
+                    id=response_id,
+                    created=created,
+                    choice=StreamingChoice(
+                        index=0,
+                        delta=Delta(
+                            tool_calls=[
+                                ChatCompletionDeltaToolCall(
+                                    id=f"codex_tool_{uuid.uuid4().hex[:12]}",
+                                    index=index,
+                                    type="function",
+                                    function=FunctionCall(
+                                        name=tool_call.name,
+                                        arguments=json.dumps(tool_call.arguments),
+                                    ),
+                                )
+                                for index, tool_call in enumerate(parsed_tool_calls)
+                            ]
+                        ),
                     ),
                 )
 

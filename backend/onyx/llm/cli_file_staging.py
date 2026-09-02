@@ -10,14 +10,14 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import unquote
 
+from pypdf import PdfReader
+
 from onyx.configs.app_configs import (
     CLI_GENERATED_PDF_MAX_FILES,
     CLI_GENERATED_PDF_MAX_SIZE_MB,
     DEFAULT_IMAGE_ANALYSIS_MAX_SIZE_MB,
-    PDF_OCR_MAX_PAGES,
 )
 from onyx.configs.constants import FileOrigin
-from onyx.file_processing.pdf_ocr import render_pdf_pages_for_ocr
 from onyx.file_store.file_store import get_default_file_store
 from onyx.file_store.models import ChatFileType, FileDescriptor
 from onyx.file_store.utils import build_full_frontend_file_url
@@ -42,16 +42,8 @@ class StagedFile(NamedTuple):
     path: str
 
 
-class RenderedFileImage(NamedTuple):
-    source_filename: str
-    page_number: int
-    total_pages: int
-    path: str
-
-
 class PreparedCLIWorkspace(NamedTuple):
     files: list[StagedFile]
-    rendered_images: list[RenderedFileImage]
     output_directory: str
 
 
@@ -102,59 +94,24 @@ def prepare_cli_file_workspace(
     _set_owner(workspace_path, owner, 0o700)
 
     attachments_path = os.path.join(workspace_path, "attachments")
-    rendered_path = os.path.join(workspace_path, "rendered-pdf-pages")
     output_path = os.path.join(workspace_path, "outputs")
     os.makedirs(attachments_path, exist_ok=True)
-    os.makedirs(rendered_path, exist_ok=True)
     os.makedirs(output_path, exist_ok=True)
 
     staged_files: list[StagedFile] = []
-    rendered_images: list[RenderedFileImage] = []
-    remaining_pdf_pages = PDF_OCR_MAX_PAGES
     for index, attachment in enumerate(attachments, start=1):
         filename = _safe_filename(attachment.filename, f"file-{index}")
         destination = os.path.join(attachments_path, f"{index:03d}-{filename}")
         Path(destination).write_bytes(attachment.content)
         staged_files.append(StagedFile(attachment=attachment, path=destination))
 
-        if attachment.mime_type != "application/pdf" or remaining_pdf_pages == 0:
-            continue
-        rendered_pdf = render_pdf_pages_for_ocr(
-            attachment.content,
-            max_pages=remaining_pdf_pages,
-        )
-        remaining_pdf_pages -= len(rendered_pdf.pages)
-        logger.info(
-            "Rendered %d low-text PDF page(s) for CLI OCR: "
-            "file_id=%s total_pages=%d omitted=%d",
-            len(rendered_pdf.pages),
-            attachment.file_id,
-            rendered_pdf.total_pages,
-            rendered_pdf.omitted_page_count,
-        )
-        for page in rendered_pdf.pages:
-            image_name = f"{index:03d}-{filename}-page-{page.page_number}.jpg"
-            image_path = os.path.join(rendered_path, image_name)
-            Path(image_path).write_bytes(page.image_bytes)
-            rendered_images.append(
-                RenderedFileImage(
-                    source_filename=filename,
-                    page_number=page.page_number,
-                    total_pages=rendered_pdf.total_pages,
-                    path=image_path,
-                )
-            )
-
-    for directory in (attachments_path, rendered_path, output_path):
+    for directory in (attachments_path, output_path):
         _set_owner(directory, owner, 0o700)
     for staged_file in staged_files:
         _set_owner(staged_file.path, owner, 0o600)
-    for rendered_image in rendered_images:
-        _set_owner(rendered_image.path, owner, 0o600)
 
     return PreparedCLIWorkspace(
         files=staged_files,
-        rendered_images=rendered_images,
         output_directory=output_path,
     )
 
@@ -204,22 +161,11 @@ def append_cli_file_instructions(
     if workspace.files:
         lines.append("The original user files are available at these local paths:")
         lines.extend(f"- {staged_file.path}" for staged_file in workspace.files)
-        if workspace.rendered_images:
-            lines.append(
-                "Low-text PDF pages were also rendered for visual OCR at these paths:"
-            )
-            lines.extend(
-                f"- {image.path} (page {image.page_number} of {image.total_pages} "
-                f"from {image.source_filename})"
-                for image in workspace.rendered_images
-            )
         lines.extend(
             [
                 "Inspect these files before you say that their contents are unavailable.",
-                "For scanned PDFs, read the rendered pages directly with vision or the "
-                "available file reader.",
-                "Do not run Python or install PDF/OCR packages merely to inspect these "
-                "attachments.",
+                "Use the original files directly with your available tools.",
+                "Onyx did not extract, convert, render, or OCR these attachments.",
             ]
         )
     lines.extend(
@@ -348,7 +294,7 @@ def publish_cli_generated_pdfs(
             continue
 
         try:
-            validation = render_pdf_pages_for_ocr(content, max_pages=1)
+            page_count = len(PdfReader(BytesIO(content), strict=False).pages)
         except Exception:
             rejected_count += 1
             logger.warning(
@@ -357,7 +303,7 @@ def publish_cli_generated_pdfs(
                 exc_info=True,
             )
             continue
-        if validation.total_pages <= 0:
+        if page_count <= 0:
             rejected_count += 1
             logger.warning("Rejected unreadable CLI PDF output: %s", resolved)
             continue
@@ -384,7 +330,7 @@ def publish_cli_generated_pdfs(
             "Published CLI-generated PDF: file_id=%s filename=%s pages=%d size=%d",
             file_id,
             filename,
-            validation.total_pages,
+            page_count,
             file_size,
         )
 

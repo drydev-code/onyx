@@ -310,7 +310,7 @@ class TestConvertChatHistory:
         assert len(last_user.image_files) == 1
         assert last_user.image_files[0].file_id == "project_image"
 
-    def test_attaches_original_pdf_for_cli_provider_staging(self) -> None:
+    def test_retains_all_original_non_image_files_for_cli_staging(self) -> None:
         pdf = ChatLoadedFile(
             file_id="pdf-file",
             content=b"%PDF-test",
@@ -319,18 +319,31 @@ class TestConvertChatHistory:
             content_text="",
             token_count=0,
         )
+        notes = ChatLoadedFile(
+            file_id="notes-file",
+            content=b"original notes",
+            file_type=ChatFileType.PLAIN_TEXT,
+            filename="notes.txt",
+            content_text="original notes",
+            token_count=2,
+        )
         user_msg = self._make_chat_message("Read this", MessageType.USER)
         user_msg.files = [
             {
                 "id": "pdf-file",
                 "type": ChatFileType.DOC,
                 "name": "scan.pdf",
-            }
+            },
+            {
+                "id": "notes-file",
+                "type": ChatFileType.PLAIN_TEXT,
+                "name": "notes.txt",
+            },
         ]
 
         result = convert_chat_history(
             chat_history=cast(list[ChatMessage], [user_msg]),
-            files=[pdf],
+            files=[pdf, notes],
             context_image_files=[],
             additional_context=None,
             token_counter=lambda text: len(text),
@@ -338,7 +351,7 @@ class TestConvertChatHistory:
         )
 
         current_user = result.simple_messages[-1]
-        assert current_user.document_files == [pdf]
+        assert current_user.document_files == [pdf, notes]
         assert "visual OCR" in result.simple_messages[0].message
 
     def test_tool_response_placeholder_token_count_is_measured(self) -> None:

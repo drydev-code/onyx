@@ -20,7 +20,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from onyx.file_processing.pdf_ocr import RenderedPdf
 from onyx.llm.claude_code_cli import (
     _CLAUDE_CODE_TOOL_BRIDGE,
     _ONYX_MCP_SERVER_TOOL_GROUP,
@@ -35,6 +34,7 @@ from onyx.llm.models import (
     LanguageModelInput,
     ReasoningEffort,
     SystemMessage,
+    ToolChoiceOptions,
     UserMessage,
 )
 
@@ -140,6 +140,91 @@ def test_invoke_stages_attachment_and_allows_only_restricted_read(
     assert "attachments" in mock_run.call_args.kwargs["input"]
 
 
+@patch("onyx.llm.claude_code_cli.subprocess.run")
+@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value=None)
+def test_invoke_passes_parallel_agents_tool_protocol(
+    _mock_mcp: MagicMock, mock_run: MagicMock
+) -> None:
+    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+    parallel_tool = {
+        "type": "function",
+        "function": {
+            "name": "parallel_agents",
+            "description": "Run independent workers.",
+            "parameters": {
+                "type": "object",
+                "properties": {"task": {"type": "string"}},
+                "required": ["task"],
+            },
+        },
+    }
+
+    _make_cli().invoke(
+        [UserMessage(content="Research this in parallel.")],
+        tools=[parallel_tool],
+        tool_choice=ToolChoiceOptions.AUTO,
+    )
+
+    prompt = mock_run.call_args.kwargs["input"]
+    assert "<onyx-tool-protocol>" in prompt
+    assert '"name":"parallel_agents"' in prompt
+    assert "Do not replace it with a CLI-native agent" in prompt
+
+
+def test_stream_emits_parallel_agents_as_onyx_tool_call() -> None:
+    response_text = (
+        '<function_calls><invoke name="parallel_agents">'
+        '<parameter name="task" string="true">Research both markets.</parameter>'
+        "</invoke></function_calls>"
+    )
+    events = [
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg-1",
+                    "content": [{"type": "text", "text": response_text}],
+                },
+            }
+        ),
+        json.dumps({"type": "result", "usage": {}}),
+    ]
+    proc = _make_proc("\n".join(events) + "\n")
+    parallel_tool = {
+        "type": "function",
+        "function": {
+            "name": "parallel_agents",
+            "description": "Run independent workers.",
+            "parameters": {
+                "type": "object",
+                "properties": {"task": {"type": "string"}},
+                "required": ["task"],
+            },
+        },
+    }
+
+    with patch("onyx.llm.claude_code_cli.subprocess.Popen", return_value=proc):
+        with patch(
+            "onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config",
+            return_value=None,
+        ):
+            chunks = list(
+                _make_cli().stream(
+                    [UserMessage(content="Research this in parallel.")],
+                    tools=[parallel_tool],
+                    tool_choice=ToolChoiceOptions.AUTO,
+                )
+            )
+
+    tool_calls = [call for chunk in chunks for call in chunk.choice.delta.tool_calls]
+    assert len(tool_calls) == 1
+    assert tool_calls[0].function is not None
+    assert tool_calls[0].function.name == "parallel_agents"
+    assert json.loads(tool_calls[0].function.arguments or "{}") == {
+        "task": "Research both markets."
+    }
+
+
 def test_stream_publishes_generated_pdf_from_restricted_workspace() -> None:
     events = [
         {
@@ -173,19 +258,11 @@ def test_stream_publishes_generated_pdf_from_restricted_workspace() -> None:
                 "onyx.llm.cli_file_staging.get_default_file_store",
                 return_value=file_store,
             ):
-                with patch(
-                    "onyx.llm.cli_file_staging.render_pdf_pages_for_ocr",
-                    return_value=RenderedPdf(
-                        total_pages=1,
-                        pages=[],
-                        omitted_page_count=0,
-                    ),
-                ):
-                    chunks = list(
-                        _make_cli().stream(
-                            [UserMessage(content="Create a downloadable PDF report.")]
-                        )
+                chunks = list(
+                    _make_cli().stream(
+                        [UserMessage(content="Create a downloadable PDF report.")]
                     )
+                )
 
     content = "".join(chunk.choice.delta.content or "" for chunk in chunks)
     generated_files = [
@@ -868,26 +945,3 @@ def test_messages_to_prompt_single_message() -> None:
     msg = UserMessage(content="single message")
     result = _messages_to_prompt(msg)
     assert result == "single message"
-
-
-# ---------------------------------------------------------------------------
-# Unsupported features warning
-# ---------------------------------------------------------------------------
-
-
-@patch("onyx.llm.claude_code_cli.subprocess.run")
-@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value=None)
-@patch("onyx.llm.claude_code_cli.logger")
-def test_tools_warning_logged(
-    mock_logger: MagicMock,
-    _mock_mcp: MagicMock,
-    mock_run: MagicMock,
-) -> None:
-    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
-    cli = _make_cli()
-
-    cli.invoke([UserMessage(content="hello")], tools=[{"type": "function"}])
-
-    mock_logger.warning.assert_called()
-    warning_msgs = [call.args[0] for call in mock_logger.warning.call_args_list]
-    assert any("does not support tool calling" in m for m in warning_msgs)
