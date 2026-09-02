@@ -5,14 +5,22 @@ import binascii
 import os
 import re
 import shutil
+from io import BytesIO
 from pathlib import Path
 from typing import NamedTuple
+from urllib.parse import unquote
 
 from onyx.configs.app_configs import (
+    CLI_GENERATED_PDF_MAX_FILES,
+    CLI_GENERATED_PDF_MAX_SIZE_MB,
     DEFAULT_IMAGE_ANALYSIS_MAX_SIZE_MB,
     PDF_OCR_MAX_PAGES,
 )
+from onyx.configs.constants import FileOrigin
 from onyx.file_processing.pdf_ocr import render_pdf_pages_for_ocr
+from onyx.file_store.file_store import get_default_file_store
+from onyx.file_store.models import ChatFileType, FileDescriptor
+from onyx.file_store.utils import build_full_frontend_file_url
 from onyx.llm.models import FileAttachment, LanguageModelInput, UserMessage
 from onyx.utils.logger import setup_logger
 
@@ -25,6 +33,8 @@ _IMAGE_EXTENSIONS = {
     "image/png": ".png",
     "image/webp": ".webp",
 }
+_SANDBOX_PDF_LINK_RE = re.compile(r"sandbox:(?P<path>[^)\s]+\.pdf)", re.IGNORECASE)
+_PDF_MIME_TYPE = "application/pdf"
 
 
 class StagedFile(NamedTuple):
@@ -42,6 +52,17 @@ class RenderedFileImage(NamedTuple):
 class PreparedCLIWorkspace(NamedTuple):
     files: list[StagedFile]
     rendered_images: list[RenderedFileImage]
+    output_directory: str
+
+
+class PublishedCLIArtifact(NamedTuple):
+    descriptor: FileDescriptor
+    markdown_link: str
+
+
+class CLIArtifactPublication(NamedTuple):
+    artifacts: list[PublishedCLIArtifact]
+    rejected_count: int
 
 
 def collect_file_attachments(prompt: LanguageModelInput) -> list[FileAttachment]:
@@ -82,8 +103,10 @@ def prepare_cli_file_workspace(
 
     attachments_path = os.path.join(workspace_path, "attachments")
     rendered_path = os.path.join(workspace_path, "rendered-pdf-pages")
+    output_path = os.path.join(workspace_path, "outputs")
     os.makedirs(attachments_path, exist_ok=True)
     os.makedirs(rendered_path, exist_ok=True)
+    os.makedirs(output_path, exist_ok=True)
 
     staged_files: list[StagedFile] = []
     rendered_images: list[RenderedFileImage] = []
@@ -122,7 +145,7 @@ def prepare_cli_file_workspace(
                 )
             )
 
-    for directory in (attachments_path, rendered_path):
+    for directory in (attachments_path, rendered_path, output_path):
         _set_owner(directory, owner, 0o700)
     for staged_file in staged_files:
         _set_owner(staged_file.path, owner, 0o600)
@@ -132,6 +155,7 @@ def prepare_cli_file_workspace(
     return PreparedCLIWorkspace(
         files=staged_files,
         rendered_images=rendered_images,
+        output_directory=output_path,
     )
 
 
@@ -176,33 +200,216 @@ def append_cli_file_instructions(
     prompt_text: str,
     workspace: PreparedCLIWorkspace,
 ) -> str:
-    if not workspace.files:
-        return prompt_text
-
-    lines = [
-        "<attached-files>",
-        "The original user files are available at these local paths:",
-    ]
-    lines.extend(f"- {staged_file.path}" for staged_file in workspace.files)
-    if workspace.rendered_images:
-        lines.append(
-            "Low-text PDF pages were also rendered for visual OCR at these paths:"
-        )
+    lines = ["<local-workspace>"]
+    if workspace.files:
+        lines.append("The original user files are available at these local paths:")
+        lines.extend(f"- {staged_file.path}" for staged_file in workspace.files)
+        if workspace.rendered_images:
+            lines.append(
+                "Low-text PDF pages were also rendered for visual OCR at these paths:"
+            )
+            lines.extend(
+                f"- {image.path} (page {image.page_number} of {image.total_pages} "
+                f"from {image.source_filename})"
+                for image in workspace.rendered_images
+            )
         lines.extend(
-            f"- {image.path} (page {image.page_number} of {image.total_pages} "
-            f"from {image.source_filename})"
-            for image in workspace.rendered_images
+            [
+                "Inspect these files before you say that their contents are unavailable.",
+                "For scanned PDFs, read the rendered pages directly with vision or the "
+                "available file reader.",
+                "Do not run Python or install PDF/OCR packages merely to inspect these "
+                "attachments.",
+            ]
         )
     lines.extend(
         [
-            "Inspect these files before you say that their contents are unavailable.",
-            "For scanned PDFs, read the rendered pages directly with vision or the "
-            "available file reader.",
-            "Do not run Python or install PDF/OCR packages merely to inspect these "
-            "attachments.",
             "If the task requires a new PDF, use the installed reportlab and Pillow "
             "packages instead of probing or installing other PDF libraries.",
-            "</attached-files>",
+            "If the task requests a downloadable PDF, save every final PDF directly "
+            f"in {workspace.output_directory}.",
+            "Do not save intermediate files in that directory.",
+            "Do not include sandbox: or local-file links in the answer. Onyx will "
+            "publish validated PDFs from the output directory and append download links.",
+            "</local-workspace>",
         ]
     )
     return f"{prompt_text}\n\n" + "\n".join(lines)
+
+
+def _is_path_inside(candidate: Path, directory: Path) -> bool:
+    try:
+        candidate.relative_to(directory)
+    except ValueError:
+        return False
+    return True
+
+
+def _candidate_generated_pdf_paths(
+    workspace_path: str,
+    output_directory: str,
+    response_text: str,
+) -> list[Path]:
+    workspace = Path(workspace_path).resolve()
+    output_path = Path(output_directory).resolve()
+    candidates: list[Path] = []
+
+    for directory in (output_path, workspace):
+        if not directory.is_dir():
+            continue
+        candidates.extend(
+            path
+            for path in sorted(directory.iterdir())
+            if path.suffix.lower() == ".pdf"
+        )
+
+    for match in _SANDBOX_PDF_LINK_RE.finditer(response_text):
+        raw_path = unquote(match.group("path"))
+        candidate = Path(raw_path)
+        if not candidate.is_absolute():
+            candidate = workspace / candidate
+        candidates.append(candidate)
+
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except (OSError, RuntimeError):
+            logger.warning("Could not resolve CLI PDF output path: %s", candidate)
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique.append(candidate)
+    return unique
+
+
+def publish_cli_generated_pdfs(
+    workspace_path: str,
+    output_directory: str,
+    response_text: str,
+) -> CLIArtifactPublication:
+    """Validate and persist PDFs created inside a CLI workspace."""
+    workspace = Path(workspace_path).resolve()
+    max_size_bytes = CLI_GENERATED_PDF_MAX_SIZE_MB * 1024 * 1024
+    artifacts: list[PublishedCLIArtifact] = []
+    rejected_count = 0
+    candidates = _candidate_generated_pdf_paths(
+        workspace_path,
+        output_directory,
+        response_text,
+    )
+
+    for candidate in candidates[:CLI_GENERATED_PDF_MAX_FILES]:
+        try:
+            resolved = candidate.resolve()
+        except (OSError, RuntimeError):
+            rejected_count += 1
+            logger.warning("Could not resolve CLI PDF output path: %s", candidate)
+            continue
+
+        if (
+            not _is_path_inside(resolved, workspace)
+            or candidate.is_symlink()
+            or not resolved.is_file()
+            or resolved.suffix.lower() != ".pdf"
+        ):
+            rejected_count += 1
+            logger.warning("Rejected unsafe or missing CLI PDF output: %s", candidate)
+            continue
+
+        try:
+            file_size = resolved.stat().st_size
+        except OSError:
+            rejected_count += 1
+            logger.warning("Could not inspect CLI PDF output: %s", resolved)
+            continue
+        if file_size == 0 or file_size > max_size_bytes:
+            rejected_count += 1
+            logger.warning(
+                "Rejected CLI PDF output with invalid size: path=%s size=%d",
+                resolved,
+                file_size,
+            )
+            continue
+
+        try:
+            content = resolved.read_bytes()
+        except OSError:
+            rejected_count += 1
+            logger.warning("Could not read CLI PDF output: %s", resolved)
+            continue
+        if not content.startswith(b"%PDF-"):
+            rejected_count += 1
+            logger.warning(
+                "Rejected CLI output with an invalid PDF header: %s", resolved
+            )
+            continue
+
+        try:
+            validation = render_pdf_pages_for_ocr(content, max_pages=1)
+        except Exception:
+            rejected_count += 1
+            logger.warning(
+                "Rejected unreadable CLI PDF output: %s",
+                resolved,
+                exc_info=True,
+            )
+            continue
+        if validation.total_pages <= 0:
+            rejected_count += 1
+            logger.warning("Rejected unreadable CLI PDF output: %s", resolved)
+            continue
+
+        filename = _safe_filename(resolved.name, "generated-report.pdf")
+        file_id = get_default_file_store().save_file(
+            content=BytesIO(content),
+            display_name=filename,
+            file_origin=FileOrigin.CHAT_IMAGE_GEN,
+            file_type=_PDF_MIME_TYPE,
+        )
+        file_url = build_full_frontend_file_url(file_id)
+        artifacts.append(
+            PublishedCLIArtifact(
+                descriptor=FileDescriptor(
+                    id=file_id,
+                    type=ChatFileType.DOC,
+                    name=filename,
+                ),
+                markdown_link=f"[{filename}]({file_url})",
+            )
+        )
+        logger.info(
+            "Published CLI-generated PDF: file_id=%s filename=%s pages=%d size=%d",
+            file_id,
+            filename,
+            validation.total_pages,
+            file_size,
+        )
+
+    rejected_count += max(0, len(candidates) - CLI_GENERATED_PDF_MAX_FILES)
+    return CLIArtifactPublication(
+        artifacts=artifacts,
+        rejected_count=rejected_count,
+    )
+
+
+def format_cli_artifact_downloads(publication: CLIArtifactPublication) -> str:
+    lines: list[str] = []
+    if publication.artifacts:
+        lines.extend(
+            [
+                "\n\n### Downloads",
+                "",
+                *(f"- {artifact.markdown_link}" for artifact in publication.artifacts),
+            ]
+        )
+    if publication.rejected_count:
+        lines.extend(
+            [
+                "\n\nA generated PDF could not be published because it was missing, "
+                "invalid, unsafe, or over the configured limit."
+            ]
+        )
+    return "\n".join(lines)

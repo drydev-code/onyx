@@ -17,10 +17,13 @@ from collections.abc import Iterator
 from typing import Any
 
 from onyx.configs.model_configs import GEN_AI_TEMPERATURE
+from onyx.file_store.models import FileDescriptor
 from onyx.llm.cli_file_staging import (
     append_cli_file_instructions,
     collect_file_attachments,
+    format_cli_artifact_downloads,
     prepare_cli_file_workspace,
+    publish_cli_generated_pdfs,
 )
 from onyx.llm.cli_tool_bridge import (
     CATEGORY_FETCH,
@@ -59,6 +62,29 @@ _DEFAULT_CLI_PATH = "claude"
 _DEFAULT_TIMEOUT = 300
 
 _ONYX_MCP_SERVER_TOOL_GROUP = "mcp__onyx"
+_CLAUDE_READ_TOOLS = "Read"
+_CLAUDE_PDF_AUTHORING_TOOLS = "Read,Write,Edit,Bash(python *),Bash(python3 *)"
+_PDF_AUTHORING_MARKERS = (
+    "create",
+    "download",
+    "erstell",
+    "erzeug",
+    "export",
+    "generat",
+    "generier",
+    "make",
+    "produc",
+    "speicher",
+    "write",
+)
+
+
+def _prompt_requests_pdf_authoring(prompt_text: str) -> bool:
+    normalized = prompt_text.casefold()
+    return "pdf" in normalized and any(
+        marker in normalized for marker in _PDF_AUTHORING_MARKERS
+    )
+
 
 # Icon map for rendering built-in Claude tools inside the Thinking panel
 # as reasoning markdown. Bridged tools (Onyx MCP and Claude's own
@@ -361,13 +387,11 @@ class ClaudeCodeCLI(LLM):
             raise
         return path
 
-    def _build_base_command(self, allow_file_read: bool = False) -> list[str]:
+    def _build_base_command(self, allowed_builtin_tools: str = "") -> list[str]:
         """Build the common non-interactive CLI command.
 
-        Claude runs as a text-generation provider inside the Onyx server, so
-        its host-level Bash and write tools must never be available. When a
-        user attaches a file, restricted mode permits only Read and confines
-        it to the temporary working directory.
+        Restricted mode confines file access to the temporary workspace.
+        PDF authoring additionally permits Python commands and file edits.
         """
         cmd = [
             self._cli_path,
@@ -375,13 +399,13 @@ class ClaudeCodeCLI(LLM):
             "--permission-mode",
             "dontAsk",
             "--tools",
-            "Read" if allow_file_read else "",
+            allowed_builtin_tools,
             "--disable-slash-commands",
             "--no-session-persistence",
             "--setting-sources",
             "",
         ]
-        if allow_file_read:
+        if allowed_builtin_tools:
             cmd.append("--restricted")
         return cmd
 
@@ -401,10 +425,12 @@ class ClaudeCodeCLI(LLM):
     def _prepare_cli_input(
         self,
         prompt: LanguageModelInput,
-    ) -> tuple[str, str | None]:
+    ) -> tuple[str, str | None, str | None, str]:
         text_prompt = _messages_to_prompt(prompt)
-        if not collect_file_attachments(prompt):
-            return text_prompt, None
+        attachments = collect_file_attachments(prompt)
+        pdf_authoring_requested = _prompt_requests_pdf_authoring(text_prompt)
+        if not attachments and not pdf_authoring_requested:
+            return text_prompt, None, None, ""
 
         workspace_path = tempfile.mkdtemp(prefix="onyx-claude-files-")
         target = self._drop_privileges_target()
@@ -418,25 +444,43 @@ class ClaudeCodeCLI(LLM):
         except Exception:
             shutil.rmtree(workspace_path, ignore_errors=True)
             raise
+        allowed_builtin_tools = (
+            _CLAUDE_PDF_AUTHORING_TOOLS
+            if pdf_authoring_requested
+            else _CLAUDE_READ_TOOLS
+        )
         return (
             append_cli_file_instructions(text_prompt, prepared_workspace),
             workspace_path,
+            prepared_workspace.output_directory,
+            allowed_builtin_tools,
         )
 
     @staticmethod
-    def _add_mcp_arguments(cmd: list[str], mcp_config_path: str | None) -> None:
+    def _add_mcp_arguments(
+        cmd: list[str],
+        mcp_config_path: str | None,
+        allowed_builtin_tools: str,
+    ) -> None:
         """Add the isolated MCP config and allow only Onyx's read tools."""
-        if not mcp_config_path:
-            return
-        cmd.extend(
-            [
-                "--mcp-config",
-                mcp_config_path,
-                "--strict-mcp-config",
-                "--allowedTools",
-                _ONYX_MCP_SERVER_TOOL_GROUP,
-            ]
-        )
+        if mcp_config_path:
+            cmd.extend(
+                [
+                    "--mcp-config",
+                    mcp_config_path,
+                    "--strict-mcp-config",
+                ]
+            )
+        allowed_tools = [
+            tool
+            for tool in (
+                allowed_builtin_tools,
+                _ONYX_MCP_SERVER_TOOL_GROUP if mcp_config_path else "",
+            )
+            if tool
+        ]
+        if allowed_tools:
+            cmd.extend(["--allowedTools", ",".join(allowed_tools)])
 
     @property
     def config(self) -> LLMConfig:
@@ -477,10 +521,12 @@ class ClaudeCodeCLI(LLM):
                 "conformant responses; use a LiteLLM-based provider instead."
             )
 
-        text_prompt, workspace_path = self._prepare_cli_input(prompt)
+        text_prompt, workspace_path, output_directory, allowed_builtin_tools = (
+            self._prepare_cli_input(prompt)
+        )
         timeout = timeout_override or self._timeout
 
-        cmd = self._build_base_command(allow_file_read=workspace_path is not None)
+        cmd = self._build_base_command(allowed_builtin_tools=allowed_builtin_tools)
         self._add_reasoning_effort(cmd, reasoning_effort)
         cmd.extend(
             [
@@ -504,10 +550,12 @@ class ClaudeCodeCLI(LLM):
             if workspace_path:
                 shutil.rmtree(workspace_path, ignore_errors=True)
             raise
-        self._add_mcp_arguments(cmd, mcp_config_path)
+        self._add_mcp_arguments(cmd, mcp_config_path, allowed_builtin_tools)
 
         env = self._build_env()
         priv_kwargs = self._subprocess_privilege_kwargs()
+        artifact_download_text = ""
+        provider_generated_files: list[FileDescriptor] = []
 
         try:
             result = subprocess.run(
@@ -520,6 +568,20 @@ class ClaudeCodeCLI(LLM):
                 cwd=workspace_path,
                 **priv_kwargs,
             )
+            if (
+                result.returncode == 0
+                and workspace_path is not None
+                and output_directory is not None
+            ):
+                publication = publish_cli_generated_pdfs(
+                    workspace_path,
+                    output_directory,
+                    result.stdout,
+                )
+                artifact_download_text = format_cli_artifact_downloads(publication)
+                provider_generated_files = [
+                    artifact.descriptor for artifact in publication.artifacts
+                ]
         except subprocess.TimeoutExpired:
             raise TimeoutError(f"Claude Code CLI timed out after {timeout}s")
         except FileNotFoundError:
@@ -606,6 +668,8 @@ class ClaudeCodeCLI(LLM):
             # Fallback: treat entire output as text
             response_text = raw_output
 
+        response_text += artifact_download_text
+
         return ModelResponse(
             id=f"cli-{uuid.uuid4().hex[:12]}",
             created=str(int(time.time())),
@@ -616,6 +680,7 @@ class ClaudeCodeCLI(LLM):
                     content=response_text,
                     role="assistant",
                     reasoning_content=reasoning_text or None,
+                    generated_files=provider_generated_files,
                 ),
             ),
             usage=usage,
@@ -645,12 +710,14 @@ class ClaudeCodeCLI(LLM):
                 "conformant responses; use a LiteLLM-based provider instead."
             )
 
-        text_prompt, workspace_path = self._prepare_cli_input(prompt)
+        text_prompt, workspace_path, output_directory, allowed_builtin_tools = (
+            self._prepare_cli_input(prompt)
+        )
         timeout = timeout_override or self._timeout
         response_id = f"cli-{uuid.uuid4().hex[:12]}"
         created = str(int(time.time()))
 
-        cmd = self._build_base_command(allow_file_read=workspace_path is not None)
+        cmd = self._build_base_command(allowed_builtin_tools=allowed_builtin_tools)
         self._add_reasoning_effort(cmd, reasoning_effort)
         cmd.extend(
             [
@@ -678,7 +745,7 @@ class ClaudeCodeCLI(LLM):
             if workspace_path:
                 shutil.rmtree(workspace_path, ignore_errors=True)
             raise
-        self._add_mcp_arguments(cmd, mcp_config_path)
+        self._add_mcp_arguments(cmd, mcp_config_path, allowed_builtin_tools)
 
         env = self._build_env()
         priv_kwargs = self._subprocess_privilege_kwargs()
@@ -739,6 +806,7 @@ class ClaudeCodeCLI(LLM):
         final_usage: Usage | None = None
         final_stop_reason: str | None = None
         event_count = 0
+        accumulated_answer_text = ""
         # Track cumulative text lengths PER MESSAGE for partial-message
         # deduplication.  With --include-partial-messages, the CLI emits
         # growing snapshots of each assistant message — but a single CLI
@@ -769,6 +837,7 @@ class ClaudeCodeCLI(LLM):
                     # Plain text fallback - yield as content
                     logger.debug("CLI non-JSON line: %s", line[:200])
                     if line:
+                        accumulated_answer_text += line
                         yield ModelResponseStream(
                             id=response_id,
                             created=created,
@@ -872,6 +941,7 @@ class ClaudeCodeCLI(LLM):
                         elif delta_type == "text_delta":
                             text = delta_data.get("text", "")
                             if text:
+                                accumulated_answer_text += text
                                 if current_message_id:
                                     msg_text_len[current_message_id] = msg_text_len.get(
                                         current_message_id, 0
@@ -1017,6 +1087,7 @@ class ClaudeCodeCLI(LLM):
                     elif delta_type == "text_delta":
                         text = delta_data.get("text", "")
                         if text:
+                            accumulated_answer_text += text
                             yield ModelResponseStream(
                                 id=response_id,
                                 created=created,
@@ -1162,6 +1233,7 @@ class ClaudeCodeCLI(LLM):
                             prev_len = msg_text_len.get(msg_id, 0)
                             new_text = full_text[prev_len:]
                             if new_text:
+                                accumulated_answer_text += new_text
                                 msg_text_len[msg_id] = len(full_text)
                                 yield ModelResponseStream(
                                     id=response_id,
@@ -1225,6 +1297,29 @@ class ClaudeCodeCLI(LLM):
                 raise TimeoutError(
                     f"Claude Code CLI streaming timed out after {timeout}s"
                 )
+
+            if workspace_path is not None and output_directory is not None:
+                publication = publish_cli_generated_pdfs(
+                    workspace_path,
+                    output_directory,
+                    accumulated_answer_text,
+                )
+                download_text = format_cli_artifact_downloads(publication)
+                if download_text:
+                    yield ModelResponseStream(
+                        id=response_id,
+                        created=created,
+                        choice=StreamingChoice(
+                            index=0,
+                            delta=Delta(
+                                content=download_text,
+                                generated_files=[
+                                    artifact.descriptor
+                                    for artifact in publication.artifacts
+                                ],
+                            ),
+                        ),
+                    )
 
             # Final chunk with finish_reason
             yield ModelResponseStream(

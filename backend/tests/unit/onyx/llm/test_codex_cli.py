@@ -165,6 +165,56 @@ def test_stream_stages_pdf_and_passes_rendered_page_as_image() -> None:
     assert "read the rendered pages directly" in final_prompt
 
 
+def test_stream_publishes_generated_pdf_before_workspace_cleanup() -> None:
+    events = [
+        {"type": "thread.started", "thread_id": "tid1"},
+        {"type": "turn.started"},
+        {
+            "type": "item.completed",
+            "item": {"id": "item1", "type": "agent_message", "text": "Done."},
+        },
+        {"type": "turn.completed"},
+    ]
+    proc = _make_proc("\n".join(json.dumps(event) for event in events) + "\n")
+    file_store = MagicMock()
+    file_store.save_file.return_value = "codex-pdf-id"
+
+    def _popen(cmd: list[str], **_kwargs: object) -> MagicMock:
+        workspace_path = Path(cmd[cmd.index("-C") + 1])
+        (workspace_path / "outputs" / "report.pdf").write_bytes(
+            PDF_FIXTURE.read_bytes()
+        )
+        return proc
+
+    with patch("onyx.llm.codex_cli.subprocess.Popen", side_effect=_popen):
+        with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
+            with patch(
+                "onyx.llm.cli_file_staging.get_default_file_store",
+                return_value=file_store,
+            ):
+                with patch(
+                    "onyx.llm.cli_file_staging.render_pdf_pages_for_ocr",
+                    return_value=RenderedPdf(
+                        total_pages=1,
+                        pages=[],
+                        omitted_page_count=0,
+                    ),
+                ):
+                    chunks = list(
+                        _make_cli().stream(
+                            [UserMessage(content="Create a PDF report.")]
+                        )
+                    )
+
+    content = "".join(chunk.choice.delta.content or "" for chunk in chunks)
+    generated_files = [
+        file for chunk in chunks for file in chunk.choice.delta.generated_files
+    ]
+    assert "/api/chat/file/codex-pdf-id" in content
+    assert generated_files[0]["name"] == "report.pdf"
+    file_store.save_file.assert_called_once()
+
+
 def test_stream_timeout_tracks_idle_time_not_total_runtime() -> None:
     events = [
         {"type": "thread.started", "thread_id": "tid1"},

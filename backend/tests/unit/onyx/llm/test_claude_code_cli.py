@@ -15,10 +15,12 @@ Covers:
 import json
 import subprocess
 from io import StringIO
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from onyx.file_processing.pdf_ocr import RenderedPdf
 from onyx.llm.claude_code_cli import (
     _CLAUDE_CODE_TOOL_BRIDGE,
     _ONYX_MCP_SERVER_TOOL_GROUP,
@@ -34,6 +36,10 @@ from onyx.llm.models import (
     ReasoningEffort,
     SystemMessage,
     UserMessage,
+)
+
+PDF_FIXTURE = (
+    Path(__file__).parents[1] / "file_processing" / "fixtures" / "with_image.pdf"
 )
 
 # ---------------------------------------------------------------------------
@@ -132,6 +138,66 @@ def test_invoke_stages_attachment_and_allows_only_restricted_read(
     assert "Bash" not in cmd
     assert mock_run.call_args.kwargs["cwd"] is not None
     assert "attachments" in mock_run.call_args.kwargs["input"]
+
+
+def test_stream_publishes_generated_pdf_from_restricted_workspace() -> None:
+    events = [
+        {
+            "type": "assistant",
+            "message": {
+                "id": "msg-1",
+                "content": [{"type": "text", "text": "Done."}],
+            },
+        },
+        {"type": "result", "usage": {}},
+    ]
+    proc = _make_proc("\n".join(json.dumps(event) for event in events) + "\n")
+    file_store = MagicMock()
+    file_store.save_file.return_value = "claude-pdf-id"
+    captured_cmd: list[str] = []
+
+    def _popen(cmd: list[str], **kwargs: object) -> MagicMock:
+        captured_cmd.extend(cmd)
+        workspace_path = Path(str(kwargs["cwd"]))
+        (workspace_path / "outputs" / "report.pdf").write_bytes(
+            PDF_FIXTURE.read_bytes()
+        )
+        return proc
+
+    with patch("onyx.llm.claude_code_cli.subprocess.Popen", side_effect=_popen):
+        with patch(
+            "onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config",
+            return_value=None,
+        ):
+            with patch(
+                "onyx.llm.cli_file_staging.get_default_file_store",
+                return_value=file_store,
+            ):
+                with patch(
+                    "onyx.llm.cli_file_staging.render_pdf_pages_for_ocr",
+                    return_value=RenderedPdf(
+                        total_pages=1,
+                        pages=[],
+                        omitted_page_count=0,
+                    ),
+                ):
+                    chunks = list(
+                        _make_cli().stream(
+                            [UserMessage(content="Create a downloadable PDF report.")]
+                        )
+                    )
+
+    content = "".join(chunk.choice.delta.content or "" for chunk in chunks)
+    generated_files = [
+        file for chunk in chunks for file in chunk.choice.delta.generated_files
+    ]
+    allowed_tools = captured_cmd[captured_cmd.index("--tools") + 1]
+    assert "Write" in allowed_tools
+    assert "Bash(python *)" in allowed_tools
+    assert "--restricted" in captured_cmd
+    assert "/api/chat/file/claude-pdf-id" in content
+    assert generated_files[0]["name"] == "report.pdf"
+    file_store.save_file.assert_called_once()
 
 
 @patch("onyx.llm.claude_code_cli.subprocess.run")

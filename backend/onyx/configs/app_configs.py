@@ -1597,6 +1597,13 @@ PDF_TEXT_EXTRACTION_TIMEOUT_SECONDS = float(
 PDF_OCR_MAX_PAGES = _non_negative_int_env("PDF_OCR_MAX_PAGES", 50)
 PDF_OCR_MIN_TEXT_CHARS = _non_negative_int_env("PDF_OCR_MIN_TEXT_CHARS", 100)
 
+# CLI-backed agents write final PDFs to a temporary workspace. These limits
+# bound what can be copied from that workspace into the persistent file store.
+CLI_GENERATED_PDF_MAX_FILES = _non_negative_int_env("CLI_GENERATED_PDF_MAX_FILES", 5)
+CLI_GENERATED_PDF_MAX_SIZE_MB = _non_negative_int_env(
+    "CLI_GENERATED_PDF_MAX_SIZE_MB", 50
+)
+
 # Use document summary for contextual rag
 USE_DOCUMENT_SUMMARY = os.environ.get("USE_DOCUMENT_SUMMARY", "true").lower() == "true"
 # Use chunk summary for contextual rag

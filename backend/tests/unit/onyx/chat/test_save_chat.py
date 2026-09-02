@@ -9,7 +9,7 @@ from pytest import MonkeyPatch
 
 from onyx.chat import save_chat
 from onyx.chat.save_chat import _extract_referenced_file_descriptors
-from onyx.file_store.models import ChatFileType
+from onyx.file_store.models import ChatFileType, FileDescriptor
 from onyx.tools.models import PythonExecutionFile, ToolCallInfo
 
 
@@ -209,3 +209,36 @@ def test_save_chat_turn_sanitizes_message_and_reasoning(
 
     assert mock_msg.message == "helloworld"
     assert mock_msg.reasoning_tokens == "thinking"
+
+
+def test_save_chat_turn_attaches_referenced_provider_generated_file(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.encode.return_value = [1]
+    monkeypatch.setattr(save_chat, "get_tokenizer", lambda *_a, **_kw: mock_tokenizer)
+
+    mock_msg = MagicMock()
+    mock_msg.id = 1
+    mock_msg.chat_session_id = "test"
+    mock_msg.files = None
+    descriptor = FileDescriptor(
+        id="generated-pdf-id",
+        type=ChatFileType.DOC,
+        name="report.pdf",
+    )
+
+    save_chat.save_chat_turn(
+        message_text=(
+            "[report.pdf](https://example.com/api/chat/file/generated-pdf-id)"
+        ),
+        reasoning_tokens=None,
+        tool_calls=[],
+        citation_to_doc={},
+        all_search_docs={},
+        db_session=MagicMock(),
+        assistant_message=mock_msg,
+        provider_generated_files=[descriptor],
+    )
+
+    assert mock_msg.files == [descriptor]

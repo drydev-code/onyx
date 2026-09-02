@@ -19,6 +19,7 @@ from onyx.context.search.models import SearchDoc
 from onyx.db.enums import IncognitoRecordMode
 from onyx.db.memory import UserMemoryContext
 from onyx.db.models import ChatMessage, Persona
+from onyx.file_store.models import FileDescriptor
 from onyx.llm.interfaces import LLM, LLMUserIdentity
 from onyx.llm.models import ReasoningEffort
 from onyx.onyxbot.slack.models import SlackContext
@@ -52,6 +53,7 @@ class ChatStateContainer:
         self.answer_tokens: str | None = None
         # Provider-native delegation events, such as Codex sub-agent results.
         self.collaboration_events: list[dict[str, Any]] = []
+        self.generated_files: list[FileDescriptor] = []
         # Store citation mapping for building citation_docs_info during partial saves
         self.citation_to_doc: CitationMapping = {}
         # True if this turn is a clarification question (deep research flow)
@@ -95,6 +97,21 @@ class ChatStateContainer:
         """Add a provider-native collaboration event."""
         with self._lock:
             self.collaboration_events.append(event)
+
+    def add_generated_files(self, files: list[FileDescriptor]) -> None:
+        """Add provider-generated files without duplicating file IDs."""
+        with self._lock:
+            known_ids = {file["id"] for file in self.generated_files}
+            for file in files:
+                if file["id"] in known_ids:
+                    continue
+                self.generated_files.append(file)
+                known_ids.add(file["id"])
+
+    def get_generated_files(self) -> list[FileDescriptor]:
+        """Return provider-generated file descriptors."""
+        with self._lock:
+            return [file.copy() for file in self.generated_files]
 
     def set_citation_mapping(self, citation_to_doc: CitationMapping) -> None:
         """Set the citation mapping from citation processor."""

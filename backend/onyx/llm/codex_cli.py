@@ -39,8 +39,10 @@ from typing import Any
 from onyx.configs.model_configs import GEN_AI_TEMPERATURE
 from onyx.llm.cli_file_staging import (
     append_cli_file_instructions,
+    format_cli_artifact_downloads,
     materialize_data_url_images,
     prepare_cli_file_workspace,
+    publish_cli_generated_pdfs,
 )
 from onyx.llm.interfaces import LLM, LanguageModelInput, LLMConfig, LLMUserIdentity
 from onyx.llm.model_response import (
@@ -484,7 +486,7 @@ class CodexCLI(LLM):
     def _prepare_cli_input(
         prompt: LanguageModelInput,
         codex_home: str,
-    ) -> tuple[str, str, str, list[str]]:
+    ) -> tuple[str, str, str, list[str], str]:
         system_text, user_text, image_urls = _extract_system_user_and_images(prompt)
         workspace_path = os.path.join(codex_home, "workspace")
         prepared_workspace = prepare_cli_file_workspace(prompt, workspace_path)
@@ -498,6 +500,7 @@ class CodexCLI(LLM):
             user_text,
             workspace_path,
             direct_image_paths + rendered_pdf_paths,
+            prepared_workspace.output_directory,
         )
 
     @property
@@ -544,7 +547,7 @@ class CodexCLI(LLM):
         codex_home = tempfile.mkdtemp(prefix="onyx-codex-")
         try:
             self._setup_auth(codex_home)
-            system_text, user_text, workspace_path, image_paths = (
+            system_text, user_text, workspace_path, image_paths, output_directory = (
                 self._prepare_cli_input(prompt, codex_home)
             )
         except Exception:
@@ -644,6 +647,16 @@ class CodexCLI(LLM):
                 response_text = f.read().strip()
         except OSError:
             response_text = stdout_data.strip()
+        try:
+            publication = publish_cli_generated_pdfs(
+                workspace_path,
+                output_directory,
+                response_text,
+            )
+            response_text += format_cli_artifact_downloads(publication)
+            generated_files = [
+                artifact.descriptor for artifact in publication.artifacts
+            ]
         finally:
             try:
                 os.unlink(output_file)
@@ -657,7 +670,11 @@ class CodexCLI(LLM):
             choice=Choice(
                 finish_reason="stop",
                 index=0,
-                message=Message(content=response_text.strip(), role="assistant"),
+                message=Message(
+                    content=response_text.strip(),
+                    role="assistant",
+                    generated_files=generated_files,
+                ),
             ),
             usage=_make_usage(),
         )
@@ -685,7 +702,7 @@ class CodexCLI(LLM):
         codex_home = tempfile.mkdtemp(prefix="onyx-codex-")
         try:
             self._setup_auth(codex_home)
-            system_text, user_text, workspace_path, image_paths = (
+            system_text, user_text, workspace_path, image_paths, output_directory = (
                 self._prepare_cli_input(prompt, codex_home)
             )
         except Exception:
@@ -783,6 +800,7 @@ class CodexCLI(LLM):
         final_usage: Usage | None = None
         event_count = 0
         answer_emitted = False
+        accumulated_answer_text = ""
         error_messages: list[str] = []
         # All distinct (event_type, item_type) pairs seen on stdout --
         # used in the fallback diagnostic when no answer is produced so
@@ -816,6 +834,12 @@ class CodexCLI(LLM):
                     item_obj.get("type", "") if isinstance(item_obj, dict) else ""
                 )
                 observed_events.append((event_type, item_type))
+
+                if (
+                    event_type == "item.completed"
+                    and item_type in _CODEX_ANSWER_ITEM_TYPES
+                ):
+                    accumulated_answer_text += _extract_codex_answer_text(item_obj)
 
                 # turn.completed carries cumulative usage.
                 if event_type == "turn.completed":
@@ -897,6 +921,28 @@ class CodexCLI(LLM):
                     choice=StreamingChoice(
                         index=0,
                         delta=Delta(content=fallback_text),
+                    ),
+                )
+
+            publication = publish_cli_generated_pdfs(
+                workspace_path,
+                output_directory,
+                accumulated_answer_text,
+            )
+            download_text = format_cli_artifact_downloads(publication)
+            if download_text:
+                yield ModelResponseStream(
+                    id=response_id,
+                    created=created,
+                    choice=StreamingChoice(
+                        index=0,
+                        delta=Delta(
+                            content=download_text,
+                            generated_files=[
+                                artifact.descriptor
+                                for artifact in publication.artifacts
+                            ],
+                        ),
                     ),
                 )
 

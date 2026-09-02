@@ -1103,6 +1103,7 @@ def _delta_has_action(delta: Delta) -> bool:
         or delta.reasoning_content
         or delta.tool_calls
         or delta.collaboration_events
+        or delta.generated_files
     )
 
 
@@ -1425,6 +1426,7 @@ def run_llm_step_pkt_generator(
                 and delta.reasoning_content is None
                 and not delta.tool_calls
                 and not delta.collaboration_events
+                and not delta.generated_files
             ):
                 empty_chunk_count += 1
                 logger.warning(
@@ -1453,6 +1455,9 @@ def run_llm_step_pkt_generator(
                 if modified_delta is None:
                     continue
                 delta = modified_delta
+
+            if delta.generated_files and state_container:
+                state_container.add_generated_files(delta.generated_files)
 
             if delta.collaboration_events:
                 yield from _close_reasoning_if_active()

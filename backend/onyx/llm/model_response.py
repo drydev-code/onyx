@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, List, Literal
 
 from pydantic import BaseModel, Field
 
+from onyx.file_store.models import FileDescriptor
 from onyx.llm.models import AnyThinkingBlock, RedactedThinkingBlock, ThinkingBlock
 from onyx.utils.logger import setup_logger
 
@@ -52,6 +53,7 @@ class Delta(BaseModel):
     thinking_blocks: List[AnyThinkingBlock] | None = None
     tool_calls: List[ChatCompletionDeltaToolCall] = Field(default_factory=list)
     collaboration_events: list[CollaborationEvent] = Field(default_factory=list)
+    generated_files: list[FileDescriptor] = Field(default_factory=list)
 
 
 class StreamingChoice(BaseModel):
@@ -85,6 +87,7 @@ class Message(BaseModel):
     tool_calls: List[ChatCompletionMessageToolCall] | None = None
     reasoning_content: str | None = None
     thinking_blocks: List[AnyThinkingBlock] | None = None
+    generated_files: list[FileDescriptor] = Field(default_factory=list)
 
 
 class Choice(BaseModel):

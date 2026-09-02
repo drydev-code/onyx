@@ -49,6 +49,13 @@ def _extract_referenced_file_descriptors(
     return descriptors
 
 
+def _filter_referenced_file_descriptors(
+    files: list[FileDescriptor],
+    message_text: str,
+) -> list[FileDescriptor]:
+    return [file for file in files if file["id"] in message_text]
+
+
 def _create_and_link_tool_calls(
     tool_calls: list[ToolCallInfo],
     assistant_message: ChatMessage,
@@ -180,6 +187,7 @@ def save_chat_turn(
     persist_content: bool = True,
     request_params: dict[str, Any] | None = None,
     collaboration_events: list[dict[str, object]] | None = None,
+    provider_generated_files: list[FileDescriptor] | None = None,
 ) -> None:
     """
     Save a chat turn by populating the assistant_message and creating related entities.
@@ -225,6 +233,7 @@ def save_chat_turn(
         assistant_message.reasoning_tokens = None
         assistant_message.collaboration_events = None
         tool_calls = []
+        provider_generated_files = None
         citation_to_doc = {}
         all_search_docs = {}
         emitted_citations = set()
@@ -356,16 +365,23 @@ def save_chat_turn(
         citation_number_to_search_doc_id if citation_number_to_search_doc_id else None
     )
 
-    # 8. Attach code interpreter generated files that the assistant actually
-    # referenced in its response, so they are available via load_all_chat_files
-    # on subsequent turns. Files not mentioned are intermediate artifacts.
+    # 8. Attach generated files that the assistant referenced in its response,
+    # so downloads remain authorized and available on subsequent turns.
     if sanitized_message_text:
         referenced = _extract_referenced_file_descriptors(
             tool_calls, sanitized_message_text
         )
+        if provider_generated_files:
+            referenced.extend(
+                _filter_referenced_file_descriptors(
+                    provider_generated_files,
+                    sanitized_message_text,
+                )
+            )
         if referenced:
             existing_files = assistant_message.files or []
-            assistant_message.files = existing_files + referenced
+            files_by_id = {file["id"]: file for file in [*existing_files, *referenced]}
+            assistant_message.files = list(files_by_id.values())
 
     # Finally save the messages, tool calls, and docs
     db_session.commit()
