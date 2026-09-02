@@ -118,7 +118,7 @@ RUN if [ "$ENABLE_CLI_PROVIDERS" = "true" ]; then \
         apt-get update && \
         apt-get install -y --no-install-recommends curl gnupg && \
         curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-        apt-get install -y --no-install-recommends nodejs && \
+        apt-get install -y --no-install-recommends nodejs poppler-utils && \
         npm install -g --no-fund --no-audit \
             "@anthropic-ai/claude-code@${CLAUDE_CODE_CLI_VERSION}" \
             "@openai/codex@${CODEX_CLI_VERSION}" && \

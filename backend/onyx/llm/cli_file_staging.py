@@ -170,6 +170,12 @@ def append_cli_file_instructions(
         )
     lines.extend(
         [
+            "For PDF input, first use the CLI's native file-reading tool when it "
+            "has one.",
+            "Otherwise, use the installed pdfinfo, pdftotext, or pdftoppm commands. "
+            "These are shell commands, not Python modules.",
+            "The installed Python PDF libraries are pypdf and pypdfium2. Do not "
+            "import fitz, PyMuPDF, or pdfinfo, and do not install packages.",
             "If the task requires a new PDF, use the installed reportlab and Pillow "
             "packages instead of probing or installing other PDF libraries.",
             "If the task requests a downloadable PDF, save every final PDF directly "

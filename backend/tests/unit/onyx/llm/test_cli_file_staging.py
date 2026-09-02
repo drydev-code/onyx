@@ -49,6 +49,9 @@ def test_prepare_workspace_stages_original_pdf_without_rendering(
     assert str(staged_path) in augmented_prompt
     assert "original files directly" in augmented_prompt
     assert "did not extract, convert, render, or OCR" in augmented_prompt
+    assert "installed pdfinfo, pdftotext, or pdftoppm commands" in augmented_prompt
+    assert "installed Python PDF libraries are pypdf and pypdfium2" in augmented_prompt
+    assert "Do not import fitz, PyMuPDF, or pdfinfo" in augmented_prompt
     assert "reportlab and Pillow" in augmented_prompt
     assert workspace.output_directory in augmented_prompt
     assert "Onyx will publish validated PDFs" in augmented_prompt
