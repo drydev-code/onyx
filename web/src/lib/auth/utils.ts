@@ -1,3 +1,5 @@
+import type { AuthTypeMetadata } from "@/lib/auth/types";
+
 // ---------------------------------------------------------------------------
 // Auth URL helpers
 // ---------------------------------------------------------------------------
@@ -10,6 +12,17 @@ export function getAuthUrl(
   if (nextUrl) params.set("next", nextUrl);
 
   return multiTenant ? `/api/auth/oauth/authorize?${params}` : null;
+}
+
+export function shouldAutoRedirectToSSO(
+  authTypeMetadata: AuthTypeMetadata | null
+): boolean {
+  const providers = authTypeMetadata?.ssoProviders ?? [];
+  return (
+    authTypeMetadata?.multiTenant === false &&
+    authTypeMetadata.passwordAuthEnabled === false &&
+    providers.length === 1
+  );
 }
 
 // ---------------------------------------------------------------------------
