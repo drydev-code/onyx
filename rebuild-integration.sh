@@ -17,6 +17,7 @@ DEFAULT_FEATURE_BRANCHES=(
     "feature/imagerouter"
     "feature/codex"
     "feature/codex-collaboration-rendering"
+    "feature/codex-collaboration-arabic-i18n"
     "feature/claude-code"
     "feature/branding"
 )
@@ -55,8 +56,9 @@ Default feature merge order:
   4. feature/imagerouter
   5. feature/codex
   6. feature/codex-collaboration-rendering
-  7. feature/claude-code
-  8. feature/branding
+  7. feature/codex-collaboration-arabic-i18n
+  8. feature/claude-code
+  9. feature/branding
 EOF
 }
 
