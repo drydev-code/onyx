@@ -8033,6 +8033,15 @@
             "status": "Écriture du code..."
           }
         },
+        "collaboration": {
+          "agent": "Agent {index}",
+          "completeHint": "Développez pour afficher le résultat de chaque agent.",
+          "header": "Agents délégués · {completed}/{total} terminés",
+          "output": "Résultat",
+          "task": "Tâche",
+          "waiting": "En attente de cet agent.",
+          "working": "Les agents travaillent en parallèle."
+        },
         "reasoning": {
           "fullText": {
             "title": "Texte intégral"

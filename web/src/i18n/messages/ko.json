@@ -8033,6 +8033,15 @@
             "status": "코드 작성 중..."
           }
         },
+        "collaboration": {
+          "agent": "에이전트 {index}",
+          "completeHint": "확장하여 각 에이전트의 출력을 확인하세요.",
+          "header": "위임된 에이전트 · {completed}/{total} 완료",
+          "output": "출력",
+          "task": "작업",
+          "waiting": "이 에이전트를 기다리는 중입니다.",
+          "working": "에이전트가 병렬로 작업하고 있습니다."
+        },
         "reasoning": {
           "fullText": {
             "title": "전체 텍스트"

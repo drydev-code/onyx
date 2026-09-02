@@ -8033,6 +8033,15 @@
             "status": "コードを作成中..."
           }
         },
+        "collaboration": {
+          "agent": "エージェント {index}",
+          "completeHint": "展開すると各エージェントの出力を表示できます。",
+          "header": "委任エージェント · {completed}/{total} 完了",
+          "output": "出力",
+          "task": "タスク",
+          "waiting": "このエージェントを待機しています。",
+          "working": "エージェントは並列で作業しています。"
+        },
         "reasoning": {
           "fullText": {
             "title": "全文"

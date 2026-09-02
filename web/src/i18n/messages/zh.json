@@ -8033,6 +8033,15 @@
             "status": "正在编写代码..."
           }
         },
+        "collaboration": {
+          "agent": "智能体 {index}",
+          "completeHint": "展开以查看每个智能体的输出。",
+          "header": "已委派智能体 · {completed}/{total} 已完成",
+          "output": "输出",
+          "task": "任务",
+          "waiting": "正在等待此智能体。",
+          "working": "智能体正在并行工作。"
+        },
         "reasoning": {
           "fullText": {
             "title": "完整文本"
