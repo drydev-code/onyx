@@ -1592,6 +1592,11 @@ PDF_TEXT_EXTRACTION_TIMEOUT_SECONDS = float(
     os.environ.get("PDF_TEXT_EXTRACTION_TIMEOUT_SECONDS") or 120
 )
 
+# CLI-backed agents receive low-text PDF pages as rendered images for visual
+# OCR. Keep the cap finite and preserve both the start and end of long PDFs.
+PDF_OCR_MAX_PAGES = _non_negative_int_env("PDF_OCR_MAX_PAGES", 50)
+PDF_OCR_MIN_TEXT_CHARS = _non_negative_int_env("PDF_OCR_MIN_TEXT_CHARS", 100)
+
 # Use document summary for contextual rag
 USE_DOCUMENT_SUMMARY = os.environ.get("USE_DOCUMENT_SUMMARY", "true").lower() == "true"
 # Use chunk summary for contextual rag

@@ -310,6 +310,37 @@ class TestConvertChatHistory:
         assert len(last_user.image_files) == 1
         assert last_user.image_files[0].file_id == "project_image"
 
+    def test_attaches_original_pdf_for_cli_provider_staging(self) -> None:
+        pdf = ChatLoadedFile(
+            file_id="pdf-file",
+            content=b"%PDF-test",
+            file_type=ChatFileType.DOC,
+            filename="scan.pdf",
+            content_text="",
+            token_count=0,
+        )
+        user_msg = self._make_chat_message("Read this", MessageType.USER)
+        user_msg.files = [
+            {
+                "id": "pdf-file",
+                "type": ChatFileType.DOC,
+                "name": "scan.pdf",
+            }
+        ]
+
+        result = convert_chat_history(
+            chat_history=cast(list[ChatMessage], [user_msg]),
+            files=[pdf],
+            context_image_files=[],
+            additional_context=None,
+            token_counter=lambda text: len(text),
+            tool_id_to_name_map={},
+        )
+
+        current_user = result.simple_messages[-1]
+        assert current_user.document_files == [pdf]
+        assert "visual OCR" in result.simple_messages[0].message
+
     def test_tool_response_placeholder_token_count_is_measured(self) -> None:
         """Cross-turn tool responses are replayed as a placeholder — its
         budgeted token count must come from the token counter, not a

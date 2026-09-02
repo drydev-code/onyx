@@ -37,6 +37,11 @@ from collections.abc import Iterator
 from typing import Any
 
 from onyx.configs.model_configs import GEN_AI_TEMPERATURE
+from onyx.llm.cli_file_staging import (
+    append_cli_file_instructions,
+    materialize_data_url_images,
+    prepare_cli_file_workspace,
+)
 from onyx.llm.interfaces import LLM, LanguageModelInput, LLMConfig, LLMUserIdentity
 from onyx.llm.model_response import (
     ChatCompletionDeltaToolCall,
@@ -50,7 +55,7 @@ from onyx.llm.model_response import (
     StreamingChoice,
     Usage,
 )
-from onyx.llm.models import ReasoningEffort, ToolChoiceOptions, resolve_reasoning_effort
+from onyx.llm.models import ReasoningEffort, ToolChoice, resolve_reasoning_effort
 from onyx.llm.well_known_providers.constants import (
     OPENAI_CODEX_ACCESS_TOKEN_KEY,
     OPENAI_CODEX_DISABLE_BUILTIN_TOOLS_KEY,
@@ -243,29 +248,42 @@ def _extract_codex_answer_text(item: dict[str, Any]) -> str:
 _CODEX_OUTPUT_MAX_CHARS = 2000
 
 
-def _extract_system_and_user(prompt: LanguageModelInput) -> tuple[str, str]:
-    """Split messages into system instructions and user prompt.
+def _extract_system_user_and_images(
+    prompt: LanguageModelInput,
+) -> tuple[str, str, list[str]]:
+    """Split messages into instructions, text, and Codex image inputs.
 
-    Returns ``(system_text, user_text)`` where system_text contains all
-    system messages and user_text contains the conversation formatted
-    to preserve markdown and role structure.
+    Codex receives image content through ``codex exec --image``. Keeping the
+    data URLs separate prevents their base64 data from entering the text
+    prompt while preserving text and image order within each message.
     """
-    if not isinstance(prompt, list):
-        dumped = prompt.model_dump(exclude_none=True)
-        return "", dumped.get("content", "")
+    messages = prompt if isinstance(prompt, list) else [prompt]
 
     system_parts: list[str] = []
     conversation_parts: list[str] = []
+    image_urls: list[str] = []
 
-    for msg in prompt:
+    for msg in messages:
         dumped = msg.model_dump(exclude_none=True)
         role = dumped.get("role", "user")
         content = dumped.get("content", "")
         if isinstance(content, list):
-            content = "\n".join(
-                block.get("text", "") if isinstance(block, dict) else str(block)
-                for block in content
-            )
+            text_parts: list[str] = []
+            for block in content:
+                if not isinstance(block, dict):
+                    text_parts.append(str(block))
+                    continue
+                text = block.get("text")
+                if isinstance(text, str) and text:
+                    text_parts.append(text)
+                image_url = block.get("image_url")
+                if isinstance(image_url, dict):
+                    url = image_url.get("url")
+                    if isinstance(url, str) and url:
+                        image_urls.append(url)
+            content = "\n".join(text_parts)
+        if not isinstance(content, str):
+            content = str(content)
         if role == "system":
             system_parts.append(content)
         elif role == "assistant":
@@ -275,7 +293,7 @@ def _extract_system_and_user(prompt: LanguageModelInput) -> tuple[str, str]:
 
     system_text = "\n\n".join(system_parts)
     user_text = "\n\n".join(conversation_parts)
-    return system_text, user_text
+    return system_text, user_text, image_urls
 
 
 def _make_usage() -> Usage:
@@ -462,6 +480,26 @@ class CodexCLI(LLM):
             return
         cmd.extend(["-c", f'model_reasoning_effort="{effort.value}"'])
 
+    @staticmethod
+    def _prepare_cli_input(
+        prompt: LanguageModelInput,
+        codex_home: str,
+    ) -> tuple[str, str, str, list[str]]:
+        system_text, user_text, image_urls = _extract_system_user_and_images(prompt)
+        workspace_path = os.path.join(codex_home, "workspace")
+        prepared_workspace = prepare_cli_file_workspace(prompt, workspace_path)
+        user_text = append_cli_file_instructions(user_text, prepared_workspace)
+        direct_image_paths = materialize_data_url_images(image_urls, workspace_path)
+        rendered_pdf_paths = [
+            rendered_image.path for rendered_image in prepared_workspace.rendered_images
+        ]
+        return (
+            system_text,
+            user_text,
+            workspace_path,
+            direct_image_paths + rendered_pdf_paths,
+        )
+
     @property
     def config(self) -> LLMConfig:
         return LLMConfig(
@@ -485,19 +523,30 @@ class CodexCLI(LLM):
         self,
         prompt: LanguageModelInput,
         tools: list[dict] | None = None,
-        tool_choice: ToolChoiceOptions | None = None,
+        tool_choice: ToolChoice | None = None,
         structured_response_format: dict | None = None,
         timeout_override: int | None = None,
         max_tokens: int | None = None,
         reasoning_effort: ReasoningEffort = ReasoningEffort.AUTO,
         user_identity: LLMUserIdentity | None = None,
+        total_timeout_override: float | None = None,
     ) -> ModelResponse:
-        system_text, user_text = _extract_system_and_user(prompt)
+        _ = (
+            tools,
+            tool_choice,
+            structured_response_format,
+            max_tokens,
+            user_identity,
+            total_timeout_override,
+        )
         timeout = timeout_override or self._timeout
 
         codex_home = tempfile.mkdtemp(prefix="onyx-codex-")
         try:
             self._setup_auth(codex_home)
+            system_text, user_text, workspace_path, image_paths = (
+                self._prepare_cli_input(prompt, codex_home)
+            )
         except Exception:
             shutil.rmtree(codex_home, ignore_errors=True)
             raise
@@ -508,6 +557,9 @@ class CodexCLI(LLM):
 
         cmd = self._build_base_cmd()
         self._add_reasoning_effort(cmd, reasoning_effort)
+        cmd.extend(["-C", workspace_path])
+        if image_paths:
+            cmd.extend(["--image", *image_paths])
         cmd.extend(["-o", output_file])
         instructions = system_text or _DEFAULT_INSTRUCTIONS
         escaped = (
@@ -613,26 +665,29 @@ class CodexCLI(LLM):
     # ------------------------------------------------------------------
     # stream() — uses ``codex exec --json`` JSONL events.
     # ------------------------------------------------------------------
-    def stream(
+    def stream(  # noqa: C901
         self,
         prompt: LanguageModelInput,
         tools: list[dict] | None = None,
-        tool_choice: ToolChoiceOptions | None = None,
+        tool_choice: ToolChoice | None = None,
         structured_response_format: dict | None = None,
         timeout_override: int | None = None,
         max_tokens: int | None = None,
         reasoning_effort: ReasoningEffort = ReasoningEffort.AUTO,
         user_identity: LLMUserIdentity | None = None,
     ) -> Iterator[ModelResponseStream]:
+        _ = (tools, tool_choice, max_tokens, user_identity)
         if structured_response_format:
             raise NotImplementedError(
                 "Codex CLI does not support structured_response_format."
             )
 
-        system_text, user_text = _extract_system_and_user(prompt)
         codex_home = tempfile.mkdtemp(prefix="onyx-codex-")
         try:
             self._setup_auth(codex_home)
+            system_text, user_text, workspace_path, image_paths = (
+                self._prepare_cli_input(prompt, codex_home)
+            )
         except Exception:
             shutil.rmtree(codex_home, ignore_errors=True)
             raise
@@ -647,6 +702,9 @@ class CodexCLI(LLM):
 
         cmd = self._build_base_cmd()
         self._add_reasoning_effort(cmd, reasoning_effort)
+        cmd.extend(["-C", workspace_path])
+        if image_paths:
+            cmd.extend(["--image", *image_paths])
         cmd.append("--json")
         cmd.extend(["-c", f'instructions="{escaped}"'])
         cmd.append(user_text)
@@ -696,8 +754,7 @@ class CodexCLI(LLM):
         def _drain_stderr() -> None:
             assert proc.stderr is not None
             try:
-                for line in proc.stderr:
-                    stderr_lines.append(line)
+                stderr_lines.extend(proc.stderr)
             except Exception:  # noqa: BLE001 - stderr can be torn down on kill
                 pass
 

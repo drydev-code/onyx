@@ -33,6 +33,7 @@ from onyx.llm.model_response import Delta
 from onyx.llm.models import (
     AssistantMessage,
     ChatCompletionMessage,
+    FileAttachment,
     FunctionCall,
     ImageContentPart,
     ImageUrlDetail,
@@ -78,6 +79,13 @@ from onyx.utils.postgres_sanitization import sanitize_string
 from onyx.utils.text_processing import find_all_json_objects
 
 logger = setup_logger()
+
+_CLI_FILE_ATTACHMENT_PROVIDERS = frozenset(
+    {
+        LlmProviderNames.OPENAI_CODEX,
+        LlmProviderNames.CLAUDE_CODE_CLI,
+    }
+)
 
 _XML_INVOKE_BLOCK_RE = re.compile(
     r"<invoke\b(?P<attrs>[^>]*)>(?P<body>.*?)</invoke>",
@@ -935,6 +943,21 @@ def translate_history_to_llm_format(
             messages.append(system_msg)
 
         elif msg.message_type == MessageType.USER:
+            file_attachments: list[FileAttachment] | None = None
+            if (
+                msg.document_files
+                and llm_config.model_provider in _CLI_FILE_ATTACHMENT_PROVIDERS
+            ):
+                file_attachments = [
+                    FileAttachment(
+                        file_id=document.file_id,
+                        filename=document.filename or f"file_{document.file_id}.pdf",
+                        mime_type="application/pdf",
+                        content=document.content,
+                    )
+                    for document in msg.document_files
+                ]
+
             # Handle user messages with potential images
             if msg.image_files:
                 # Build content parts: text + images
@@ -992,6 +1015,7 @@ def translate_history_to_llm_format(
                 user_msg = UserMessage(
                     role="user",
                     content=content_parts,
+                    file_attachments=file_attachments,
                 )
                 messages.append(user_msg)
             else:
@@ -999,6 +1023,7 @@ def translate_history_to_llm_format(
                 user_msg_text = UserMessage(
                     role="user",
                     content=msg.message,
+                    file_attachments=file_attachments,
                 )
                 messages.append(user_msg_text)
 
@@ -1506,7 +1531,7 @@ def run_llm_step_pkt_generator(
                     bridge_category = (
                         cli_bridge.get(tool_name) if cli_bridge and tool_name else None
                     )
-                    if bridge_category:
+                    if bridge_category and tool_name is not None:
                         # CLI-self-executed tool: emit rich packets directly
                         # and skip the kickoff path so the tool is not
                         # double-executed by Onyx.

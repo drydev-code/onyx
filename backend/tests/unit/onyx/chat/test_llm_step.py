@@ -792,6 +792,71 @@ class TestNonVisionImageStripping:
         assert len(translated) == 1
 
 
+class TestCLIFileAttachments:
+    @pytest.mark.parametrize(
+        "provider",
+        [
+            LlmProviderNames.OPENAI_CODEX,
+            LlmProviderNames.CLAUDE_CODE_CLI,
+        ],
+    )
+    def test_pdf_bytes_are_available_only_to_cli_wrappers(self, provider: str) -> None:
+        pdf = ChatLoadedFile(
+            file_id="pdf-1",
+            content=b"%PDF-original",
+            file_type=ChatFileType.DOC,
+            filename="scan.pdf",
+            content_text="",
+            token_count=0,
+        )
+        history = [
+            ChatMessageSimple(
+                message="Run OCR",
+                token_count=3,
+                message_type=MessageType.USER,
+                document_files=[pdf],
+            )
+        ]
+
+        translated = translate_history_to_llm_format(
+            history=history,
+            llm_config=_make_llm_config(provider),
+        )
+
+        assert isinstance(translated, list)
+        assert isinstance(translated[0], UserMessage)
+        assert translated[0].file_attachments is not None
+        assert translated[0].file_attachments[0].content == b"%PDF-original"
+        assert "file_attachments" not in translated[0].model_dump()
+
+    def test_pdf_bytes_do_not_enter_standard_provider_requests(self) -> None:
+        pdf = ChatLoadedFile(
+            file_id="pdf-1",
+            content=b"%PDF-original",
+            file_type=ChatFileType.DOC,
+            filename="scan.pdf",
+            content_text="",
+            token_count=0,
+        )
+        history = [
+            ChatMessageSimple(
+                message="Read this",
+                token_count=3,
+                message_type=MessageType.USER,
+                document_files=[pdf],
+            )
+        ]
+
+        translated = translate_history_to_llm_format(
+            history=history,
+            llm_config=_make_llm_config(OPENAI_PROVIDER_NAME),
+        )
+
+        assert isinstance(translated, list)
+        assert isinstance(translated[0], UserMessage)
+        assert translated[0].file_attachments is None
+
+
 class TestEmptyAnswerRecovery:
     """Tests for the empty-answer recovery in run_llm_step_pkt_generator.
 

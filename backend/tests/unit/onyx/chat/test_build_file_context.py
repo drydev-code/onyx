@@ -8,6 +8,7 @@ to invent workarounds (web-searching for the document, guessing contents).
 from onyx.chat.chat_utils import (
     CONTENT_PENDING_NOTICE,
     CONTENT_UNAVAILABLE_NOTICE,
+    CONTENT_VISUAL_FALLBACK_NOTICE,
     build_file_context,
 )
 from onyx.file_store.models import ChatFileType
@@ -71,4 +72,18 @@ def test_metadata_only_files_keep_tool_instructions() -> None:
         token_count=0,
     )
     assert "file_reader" in result.message.message
+    assert CONTENT_UNAVAILABLE_NOTICE not in result.message.message
+
+
+def test_empty_pdf_with_visual_fallback_directs_model_to_ocr() -> None:
+    result = build_file_context(
+        tool_file_id="abc",
+        filename="scan.pdf",
+        file_type=ChatFileType.DOC,
+        content_text="",
+        token_count=0,
+        visual_fallback_available=True,
+    )
+    assert CONTENT_VISUAL_FALLBACK_NOTICE in result.message.message
+    assert "visual OCR" in result.message.message
     assert CONTENT_UNAVAILABLE_NOTICE not in result.message.message

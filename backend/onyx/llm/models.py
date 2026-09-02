@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LLMErrorInfo(BaseModel):
@@ -189,6 +189,20 @@ class ImageContentPart(BaseModel):
 ContentPart = TextContentPart | ImageContentPart
 
 
+class FileAttachment(BaseModel):
+    """Binary file available only to local CLI-backed LLM providers.
+
+    ``content`` is excluded from serialization so a PDF is not copied into
+    provider request JSON, prompt-cache keys, or tracing payloads. CLI wrappers
+    stage these bytes in a temporary workspace before they start the agent.
+    """
+
+    file_id: str
+    filename: str
+    mime_type: str
+    content: bytes = Field(exclude=True, repr=False)
+
+
 # The signature is minted by the provider and must be round-tripped unmodified
 # for replay to be accepted.
 class ThinkingBlock(BaseModel):
@@ -234,6 +248,11 @@ class SystemMessage(CacheableMessage):
 class UserMessage(CacheableMessage):
     role: Literal["user"] = "user"
     content: str | list[ContentPart]
+    file_attachments: list[FileAttachment] | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+    )
 
 
 class AssistantMessage(CacheableMessage):

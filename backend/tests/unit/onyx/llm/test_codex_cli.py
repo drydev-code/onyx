@@ -15,10 +15,12 @@ Covers:
 
 import json
 from io import StringIO
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from onyx.file_processing.pdf_ocr import RenderedPdf, RenderedPdfPage
 from onyx.llm.codex_cli import (
     _CODEX_DISABLE_WEB_TOOL_FLAGS,
     _CODEX_OUTPUT_MAX_CHARS,
@@ -28,7 +30,11 @@ from onyx.llm.codex_cli import (
     _format_codex_command_start,
 )
 from onyx.llm.model_response import ModelResponseStream
-from onyx.llm.models import ReasoningEffort, UserMessage
+from onyx.llm.models import FileAttachment, ReasoningEffort, UserMessage
+
+PDF_FIXTURE = (
+    Path(__file__).parents[1] / "file_processing" / "fixtures" / "with_image.pdf"
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -117,6 +123,44 @@ def test_stream_command_includes_instructions() -> None:
     c_indices = [i for i, v in enumerate(cmd) if v == "-c"]
     instructions_found = any(cmd[i + 1].startswith("instructions=") for i in c_indices)
     assert instructions_found
+
+
+def test_stream_stages_pdf_and_passes_rendered_page_as_image() -> None:
+    proc = _make_proc("")
+    prompt = UserMessage(
+        content="Read the scan.",
+        file_attachments=[
+            FileAttachment(
+                file_id="pdf-1",
+                filename="scan.pdf",
+                mime_type="application/pdf",
+                content=PDF_FIXTURE.read_bytes(),
+            )
+        ],
+    )
+
+    rendered_pdf = RenderedPdf(
+        total_pages=1,
+        pages=[RenderedPdfPage(page_number=1, image_bytes=b"\xff\xd8\xff")],
+        omitted_page_count=0,
+    )
+    with patch(
+        "onyx.llm.cli_file_staging.render_pdf_pages_for_ocr",
+        return_value=rendered_pdf,
+    ):
+        with patch(
+            "onyx.llm.codex_cli.subprocess.Popen", return_value=proc
+        ) as mock_popen:
+            with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
+                list(_make_cli().stream([prompt]))
+
+    cmd = mock_popen.call_args[0][0]
+    workspace_path = cmd[cmd.index("-C") + 1]
+    image_path = cmd[cmd.index("--image") + 1]
+    final_prompt = cmd[-1]
+    assert image_path.endswith("scan.pdf-page-1.jpg")
+    assert workspace_path in final_prompt
+    assert "visual OCR" in final_prompt
 
 
 def test_stream_command_passes_resolved_reasoning_effort() -> None:

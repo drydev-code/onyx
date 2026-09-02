@@ -94,6 +94,13 @@ CONTENT_UNAVAILABLE_NOTICE = (
     "needed, ask the user for a text-based copy.]"
 )
 
+CONTENT_VISUAL_FALLBACK_NOTICE = (
+    "[No machine-readable text could be extracted from this PDF. The original "
+    "PDF is attached to the related user message. If file or image-reading "
+    "tools are available, inspect its pages with visual OCR. Do not guess its "
+    "contents.]"
+)
+
 
 def build_file_context(
     tool_file_id: str,
@@ -103,6 +110,7 @@ def build_file_context(
     token_count: int = 0,
     approx_char_count: int | None = None,
     content_pending: bool = False,
+    visual_fallback_available: bool = False,
 ) -> FileContextResult:
     """Build the LLM context representation for a single file.
 
@@ -125,9 +133,12 @@ def build_file_context(
         # An empty file block gives the model nothing to go on, and it tends
         # to invent workarounds (search the web for the document, guess its
         # contents). Say explicitly why there is no content.
-        notice = (
-            CONTENT_PENDING_NOTICE if content_pending else CONTENT_UNAVAILABLE_NOTICE
-        )
+        if content_pending:
+            notice = CONTENT_PENDING_NOTICE
+        elif visual_fallback_available:
+            notice = CONTENT_VISUAL_FALLBACK_NOTICE
+        else:
+            notice = CONTENT_UNAVAILABLE_NOTICE
         message_text = f"File: {filename}\n{notice}\nEnd of File"
         message = ChatMessageSimple(
             message=message_text,
@@ -771,6 +782,12 @@ def convert_chat_history(
                             # Text files (DOC, PLAIN_TEXT, TABULAR) are added as separate messages
                             text_files.append((loaded_file, file_descriptor))
 
+            document_files = [
+                loaded_file
+                for loaded_file, _ in text_files
+                if (loaded_file.filename or "").lower().endswith(".pdf")
+            ]
+
             # Add text files as separate messages before the user message.
             # Each message is tagged with ``file_id`` so that forgotten files
             # can be detected after context-window truncation.
@@ -786,6 +803,9 @@ def convert_chat_history(
                     content_text=text_file.content_text,
                     token_count=text_file.token_count,
                     content_pending=text_file.content_pending,
+                    visual_fallback_available=(text_file.filename or "")
+                    .lower()
+                    .endswith(".pdf"),
                 )
                 simple_messages.append(ctx.message)
                 all_injected_file_metadata[tool_id] = ctx.tool_metadata
@@ -821,6 +841,7 @@ def convert_chat_history(
                     message_type=MessageType.USER,
                     image_files=image_files if image_files else None,
                     image_token_count=image_token_count,
+                    document_files=document_files if document_files else None,
                 )
             )
 

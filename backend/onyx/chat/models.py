@@ -166,6 +166,9 @@ class ChatMessageSimple(BaseModel):
     # budgeting can discount it when a non-vision model replays the images
     # as text markers instead.
     image_token_count: int = 0
+    # Original PDF files attached to this user message. These remain lazy until
+    # a CLI-backed provider stages them in its temporary workspace.
+    document_files: list[ChatLoadedFile] | None = None
     # Only for TOOL_CALL_RESPONSE type messages
     tool_call_id: str | None = None
     # For ASSISTANT messages with tool calls (OpenAI parallel tool calling format)

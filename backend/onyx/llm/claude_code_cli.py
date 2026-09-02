@@ -6,6 +6,7 @@ This is NOT a LiteLLM-based provider; it uses subprocess directly.
 
 import json
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -15,15 +16,12 @@ import uuid
 from collections.abc import Iterator
 from typing import Any
 
-try:
-    import pwd
-except ImportError:
-    # Non-POSIX (e.g. Windows dev boxes). Privilege dropping is a POSIX-only
-    # concern and _drop_privileges_target() bails out before touching pwd, but
-    # a module-level import would otherwise break importing this provider at all.
-    pwd = None  # type: ignore[assignment]
-
 from onyx.configs.model_configs import GEN_AI_TEMPERATURE
+from onyx.llm.cli_file_staging import (
+    append_cli_file_instructions,
+    collect_file_attachments,
+    prepare_cli_file_workspace,
+)
 from onyx.llm.cli_tool_bridge import (
     CATEGORY_FETCH,
     CATEGORY_FILE_READER,
@@ -44,7 +42,7 @@ from onyx.llm.model_response import (
 )
 from onyx.llm.models import (
     ReasoningEffort,
-    ToolChoiceOptions,
+    ToolChoice,
     resolve_reasoning_effort,
 )
 from onyx.llm.well_known_providers.constants import (
@@ -138,7 +136,7 @@ def _messages_to_prompt(prompt: LanguageModelInput) -> str:
         "function": "function",
     }
 
-    def _normalize(msg: object) -> tuple[str, str]:
+    def _normalize(msg: Any) -> tuple[str, str]:
         if hasattr(msg, "model_dump"):
             dumped = msg.model_dump(exclude_none=True)  # type: ignore[union-attr]
         elif isinstance(msg, dict):
@@ -256,11 +254,13 @@ class ClaudeCodeCLI(LLM):
         home)`` of that user, or ``None`` if we are not root or the user does
         not exist.
         """
-        try:
-            if os.geteuid() != 0:
-                return None
-        except AttributeError:
+        if os.name != "posix":
             return None  # non-POSIX
+
+        import pwd
+
+        if os.geteuid() != 0:
+            return None
         try:
             pw = pwd.getpwnam("onyx")
         except KeyError:
@@ -361,26 +361,29 @@ class ClaudeCodeCLI(LLM):
             raise
         return path
 
-    def _build_base_command(self) -> list[str]:
+    def _build_base_command(self, allow_file_read: bool = False) -> list[str]:
         """Build the common non-interactive CLI command.
 
         Claude runs as a text-generation provider inside the Onyx server, so
-        its host-level Bash and filesystem tools must never be available. The
-        empty setting sources also prevent a deployment-local CLAUDE.md or
-        settings file from changing provider behavior.
+        its host-level Bash and write tools must never be available. When a
+        user attaches a file, restricted mode permits only Read and confines
+        it to the temporary working directory.
         """
-        return [
+        cmd = [
             self._cli_path,
             "--print",
             "--permission-mode",
             "dontAsk",
             "--tools",
-            "",
+            "Read" if allow_file_read else "",
             "--disable-slash-commands",
             "--no-session-persistence",
             "--setting-sources",
             "",
         ]
+        if allow_file_read:
+            cmd.append("--restricted")
+        return cmd
 
     def _add_reasoning_effort(self, cmd: list[str], requested: ReasoningEffort) -> None:
         effort = resolve_reasoning_effort(
@@ -394,6 +397,31 @@ class ClaudeCodeCLI(LLM):
         if effort is ReasoningEffort.ULTRA:
             effort = ReasoningEffort.MAX
         cmd.extend(["--effort", effort.value])
+
+    def _prepare_cli_input(
+        self,
+        prompt: LanguageModelInput,
+    ) -> tuple[str, str | None]:
+        text_prompt = _messages_to_prompt(prompt)
+        if not collect_file_attachments(prompt):
+            return text_prompt, None
+
+        workspace_path = tempfile.mkdtemp(prefix="onyx-claude-files-")
+        target = self._drop_privileges_target()
+        owner = (target[0], target[1]) if target is not None else None
+        try:
+            prepared_workspace = prepare_cli_file_workspace(
+                prompt,
+                workspace_path,
+                owner=owner,
+            )
+        except Exception:
+            shutil.rmtree(workspace_path, ignore_errors=True)
+            raise
+        return (
+            append_cli_file_instructions(text_prompt, prepared_workspace),
+            workspace_path,
+        )
 
     @staticmethod
     def _add_mcp_arguments(cmd: list[str], mcp_config_path: str | None) -> None:
@@ -428,14 +456,15 @@ class ClaudeCodeCLI(LLM):
         self,
         prompt: LanguageModelInput,
         tools: list[dict] | None = None,
-        tool_choice: ToolChoiceOptions | None = None,
+        tool_choice: ToolChoice | None = None,
         structured_response_format: dict | None = None,
         timeout_override: int | None = None,
         max_tokens: int | None = None,
         reasoning_effort: ReasoningEffort = ReasoningEffort.AUTO,
         user_identity: LLMUserIdentity | None = None,
+        total_timeout_override: float | None = None,
     ) -> ModelResponse:
-        _ = (tool_choice, max_tokens, user_identity)
+        _ = (tool_choice, max_tokens, user_identity, total_timeout_override)
         if tools:
             logger.warning(
                 "Claude Code CLI does not support tool calling. "
@@ -448,10 +477,10 @@ class ClaudeCodeCLI(LLM):
                 "conformant responses; use a LiteLLM-based provider instead."
             )
 
-        text_prompt = _messages_to_prompt(prompt)
+        text_prompt, workspace_path = self._prepare_cli_input(prompt)
         timeout = timeout_override or self._timeout
 
-        cmd = self._build_base_command()
+        cmd = self._build_base_command(allow_file_read=workspace_path is not None)
         self._add_reasoning_effort(cmd, reasoning_effort)
         cmd.extend(
             [
@@ -469,7 +498,12 @@ class ClaudeCodeCLI(LLM):
         # The CLI silently ignores token caps; callers that need a hard cap
         # should use a LiteLLM-based provider instead.
 
-        mcp_config_path = self._write_mcp_config()
+        try:
+            mcp_config_path = self._write_mcp_config()
+        except Exception:
+            if workspace_path:
+                shutil.rmtree(workspace_path, ignore_errors=True)
+            raise
         self._add_mcp_arguments(cmd, mcp_config_path)
 
         env = self._build_env()
@@ -483,6 +517,7 @@ class ClaudeCodeCLI(LLM):
                 text=True,
                 timeout=timeout,
                 env=env,
+                cwd=workspace_path,
                 **priv_kwargs,
             )
         except subprocess.TimeoutExpired:
@@ -498,6 +533,8 @@ class ClaudeCodeCLI(LLM):
                     os.unlink(mcp_config_path)
                 except OSError:
                     pass
+            if workspace_path:
+                shutil.rmtree(workspace_path, ignore_errors=True)
 
         if result.returncode != 0:
             error_msg = result.stderr.strip() if result.stderr else "Unknown error"
@@ -588,7 +625,7 @@ class ClaudeCodeCLI(LLM):
         self,
         prompt: LanguageModelInput,
         tools: list[dict] | None = None,
-        tool_choice: ToolChoiceOptions | None = None,
+        tool_choice: ToolChoice | None = None,
         structured_response_format: dict | None = None,
         timeout_override: int | None = None,
         max_tokens: int | None = None,
@@ -608,12 +645,12 @@ class ClaudeCodeCLI(LLM):
                 "conformant responses; use a LiteLLM-based provider instead."
             )
 
-        text_prompt = _messages_to_prompt(prompt)
+        text_prompt, workspace_path = self._prepare_cli_input(prompt)
         timeout = timeout_override or self._timeout
         response_id = f"cli-{uuid.uuid4().hex[:12]}"
         created = str(int(time.time()))
 
-        cmd = self._build_base_command()
+        cmd = self._build_base_command(allow_file_read=workspace_path is not None)
         self._add_reasoning_effort(cmd, reasoning_effort)
         cmd.extend(
             [
@@ -635,7 +672,12 @@ class ClaudeCodeCLI(LLM):
         # The CLI silently ignores token caps; callers that need a hard cap
         # should use a LiteLLM-based provider instead.
 
-        mcp_config_path = self._write_mcp_config()
+        try:
+            mcp_config_path = self._write_mcp_config()
+        except Exception:
+            if workspace_path:
+                shutil.rmtree(workspace_path, ignore_errors=True)
+            raise
         self._add_mcp_arguments(cmd, mcp_config_path)
 
         env = self._build_env()
@@ -649,6 +691,7 @@ class ClaudeCodeCLI(LLM):
                 stderr=subprocess.PIPE,
                 text=True,
                 env=env,
+                cwd=workspace_path,
                 **priv_kwargs,
             )
             # Write prompt to stdin and close it
@@ -661,6 +704,8 @@ class ClaudeCodeCLI(LLM):
                     os.unlink(mcp_config_path)
                 except OSError:
                     pass
+            if workspace_path:
+                shutil.rmtree(workspace_path, ignore_errors=True)
             raise RuntimeError(
                 f"Claude Code CLI not found at '{self._cli_path}'. "
                 "Ensure the 'claude' CLI is installed and accessible."
@@ -1214,6 +1259,8 @@ class ClaudeCodeCLI(LLM):
                     os.unlink(mcp_config_path)
                 except OSError:
                     pass
+            if workspace_path:
+                shutil.rmtree(workspace_path, ignore_errors=True)
             stderr = proc.stderr.read() if proc.stderr else ""
             if stderr:
                 logger.info("CLI stderr: %s", stderr[:1000])

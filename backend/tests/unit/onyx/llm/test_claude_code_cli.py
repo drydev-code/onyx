@@ -29,6 +29,8 @@ from onyx.llm.claude_code_cli import (
 from onyx.llm.model_response import ModelResponse, ModelResponseStream
 from onyx.llm.models import (
     AssistantMessage,
+    FileAttachment,
+    LanguageModelInput,
     ReasoningEffort,
     SystemMessage,
     UserMessage,
@@ -102,6 +104,34 @@ def test_invoke_command_isolates_host_tools_and_settings(
     assert cmd[cmd.index("--setting-sources") + 1] == ""
     assert "--disable-slash-commands" in cmd
     assert "--no-session-persistence" in cmd
+
+
+@patch("onyx.llm.claude_code_cli.subprocess.run")
+@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value=None)
+def test_invoke_stages_attachment_and_allows_only_restricted_read(
+    _mock_mcp: MagicMock, mock_run: MagicMock
+) -> None:
+    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+    prompt = UserMessage(
+        content="Read the PDF.",
+        file_attachments=[
+            FileAttachment(
+                file_id="pdf-1",
+                filename="report.pdf",
+                mime_type="application/octet-stream",
+                content=b"raw-file-content",
+            )
+        ],
+    )
+
+    _make_cli().invoke([prompt])
+
+    cmd = mock_run.call_args[0][0]
+    assert cmd[cmd.index("--tools") + 1] == "Read"
+    assert "--restricted" in cmd
+    assert "Bash" not in cmd
+    assert mock_run.call_args.kwargs["cwd"] is not None
+    assert "attachments" in mock_run.call_args.kwargs["input"]
 
 
 @patch("onyx.llm.claude_code_cli.subprocess.run")
@@ -755,7 +785,7 @@ def test_cli_config_exposes_bridge() -> None:
 
 
 def test_messages_to_prompt_with_roles() -> None:
-    messages = [
+    messages: LanguageModelInput = [
         SystemMessage(content="You are helpful."),
         UserMessage(content="What is 2+2?"),
         AssistantMessage(content="4"),
