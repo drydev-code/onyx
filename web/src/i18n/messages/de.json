@@ -5110,6 +5110,43 @@
           "title": "Selbst gehostet & Benutzerdefiniert"
         }
       },
+      "virtualProfiles": {
+        "addButton": "Profil hinzufügen",
+        "defaultTag": "Standard",
+        "deleteAria": "{name} löschen",
+        "deleteModal": {
+          "description": "Benutzer können dieses Profil danach nicht mehr auswählen.",
+          "submit": "Löschen",
+          "title": "{name} löschen"
+        },
+        "disabledDescription": "Benutzer wählen Anbietermodelle direkt aus. Fügen Sie Profile hinzu und aktivieren Sie dann verwaltete Profile.",
+        "editAria": "{name} bearbeiten",
+        "emptyDescription": "Fügen Sie einen einfachen Namen hinzu und ordnen Sie ihn einem konfigurierten Anbietermodell zu.",
+        "enabledDescription": "Alle Benutzer sehen nur diese Profilnamen. Onyx löst jedes Profil in sein aktuelles Ziel auf.",
+        "form": {
+          "createTitle": "Modellprofil hinzufügen",
+          "editTitle": "Modellprofil bearbeiten",
+          "nameLabel": "Profilname",
+          "namePlaceholder": "Normaler Agent",
+          "saveButton": "Speichern",
+          "targetLabel": "Weiterleiten an"
+        },
+        "listTitle": "Modellprofile",
+        "routesTo": "Weiterleitung an {provider} · {model}",
+        "setDefaultButton": "Als Standard festlegen",
+        "title": "Verwaltete Modellprofile",
+        "toasts": {
+          "defaultFailed": "Das Standardprofil konnte nicht aktualisiert werden.",
+          "defaultUpdated": "Das Standardprofil wurde aktualisiert.",
+          "deleteFailed": "Das Profil konnte nicht gelöscht werden.",
+          "deleted": "Das Modellprofil wurde gelöscht.",
+          "disabled": "Verwaltete Modellprofile wurden deaktiviert.",
+          "enabled": "Verwaltete Modellprofile wurden aktiviert.",
+          "saveFailed": "Das Profil konnte nicht gespeichert werden.",
+          "saved": "Das Modellprofil wurde gespeichert.",
+          "toggleFailed": "Verwaltete Modellprofile konnten nicht geändert werden."
+        }
+      },
       "modals": {
         "access": {
           "admin": {

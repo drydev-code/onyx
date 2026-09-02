@@ -24,6 +24,7 @@ from onyx.db.persona import get_raw_personas_for_user
 from onyx.db.user_group import assert_not_shared_with_default_group
 from onyx.error_handling.error_codes import OnyxErrorCode
 from onyx.error_handling.exceptions import OnyxError
+from onyx.llm.constants import LlmProviderNames
 from onyx.llm.models import ReasoningEffort
 from onyx.llm.utils import model_supports_image_input
 from onyx.llm.well_known_providers.auto_update_models import LLMRecommendations
@@ -277,8 +278,12 @@ def upsert_llm_provider(
             raise ValueError(
                 f"LLM provider with id {llm_provider_upsert_request.id} not found"
             )
+        if existing_llm_provider.provider == LlmProviderNames.ONYX_VIRTUAL:
+            raise ValueError("Model profile providers cannot be edited directly")
 
     else:
+        if llm_provider_upsert_request.provider == LlmProviderNames.ONYX_VIRTUAL:
+            raise ValueError("Model profile providers cannot be created directly")
         existing_llm_provider = LLMProviderModel(name=llm_provider_upsert_request.name)
         db_session.add(existing_llm_provider)
 
@@ -368,6 +373,14 @@ def upsert_llm_provider(
             )
 
     if removed_ids:
+        from onyx.db.virtual_llm import fetch_profiles_targeting_models
+
+        profiles = fetch_profiles_targeting_models(db_session, removed_ids)
+        if profiles:
+            raise ValueError(
+                "Cannot remove models used by these model profiles: "
+                + ", ".join(profiles)
+            )
         db_session.query(ModelConfiguration).filter(
             ModelConfiguration.id.in_(removed_ids)
         ).delete(synchronize_session="fetch")
@@ -555,7 +568,12 @@ def fetch_existing_models(
     models = (
         select(ModelConfiguration)
         .join(LLMModelFlow)
+        .join(
+            LLMProviderModel,
+            ModelConfiguration.llm_provider_id == LLMProviderModel.id,
+        )
         .where(LLMModelFlow.llm_model_flow_type.in_(flow_types))
+        .where(LLMProviderModel.provider != LlmProviderNames.ONYX_VIRTUAL)
         .options(
             selectinload(ModelConfiguration.llm_provider),
             selectinload(ModelConfiguration.llm_model_flows),
@@ -581,6 +599,7 @@ def fetch_existing_llm_providers(
             used for image generation configs
     """
     stmt = select(LLMProviderModel)
+    stmt = stmt.where(LLMProviderModel.provider != LlmProviderNames.ONYX_VIRTUAL)
 
     if flow_type_filter:
         providers_with_flows = (
@@ -659,8 +678,16 @@ def fetch_all_accessible_llm_providers(
     persona=None below: Craft has no persona context, so a provider restricted
     to specific personas is intentionally excluded even when otherwise
     public."""
+    from onyx.db.virtual_llm import fetch_virtual_provider_view
+    from onyx.server.settings.store import load_settings
+
+    if load_settings().virtual_model_profiles_enabled:
+        virtual_provider = fetch_virtual_provider_view(db_session)
+        return [virtual_provider] if virtual_provider is not None else []
+
     provider_models = db_session.scalars(
         select(LLMProviderModel)
+        .where(LLMProviderModel.provider != LlmProviderNames.ONYX_VIRTUAL)
         .order_by(LLMProviderModel.id.asc())
         .options(
             selectinload(LLMProviderModel.model_configurations),
@@ -757,6 +784,17 @@ def fetch_accessible_llm_provider_by_id(
 ) -> LLMProviderView | None:
     """``provider_id``'s view when ``user`` may access it (is_public / group
     rules; persona-restricted providers are excluded — no persona context)."""
+    from onyx.db.virtual_llm import fetch_virtual_provider_view
+    from onyx.server.settings.store import load_settings
+
+    if load_settings().virtual_model_profiles_enabled:
+        virtual_provider = fetch_virtual_provider_view(db_session)
+        return (
+            virtual_provider
+            if virtual_provider is not None and virtual_provider.id == provider_id
+            else None
+        )
+
     provider_model = fetch_existing_llm_provider_by_id(provider_id, db_session)
     if provider_model is None:
         return None
@@ -955,6 +993,24 @@ def remove_llm_provider(
     provider = db_session.get(LLMProviderModel, provider_id)
     if not provider:
         raise ValueError("LLM Provider not found")
+    if provider.provider == LlmProviderNames.ONYX_VIRTUAL:
+        raise ValueError("Model profile providers cannot be deleted directly")
+
+    from onyx.db.virtual_llm import fetch_profiles_targeting_models
+
+    model_ids = list(
+        db_session.scalars(
+            select(ModelConfiguration.id).where(
+                ModelConfiguration.llm_provider_id == provider_id
+            )
+        ).all()
+    )
+    profiles = fetch_profiles_targeting_models(db_session, model_ids)
+    if profiles:
+        raise ValueError(
+            "Cannot delete a provider used by these model profiles: "
+            + ", ".join(profiles)
+        )
 
     for persona in get_personas_using_provider(db_session, provider_id):
         persona.default_model_configuration_id = None

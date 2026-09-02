@@ -4,7 +4,10 @@ import { useAdminRouteTitle } from "@/lib/adminNavLabels";
 import { useState, useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { useSWRConfig } from "swr";
-import { useAdminLLMProviders } from "@/lib/languageModels/hooks";
+import {
+  useAdminLLMProviders,
+  useVirtualModelProfiles,
+} from "@/lib/languageModels/hooks";
 import { PageLoader } from "@opal/layouts";
 import { Content, ContentAction, InputHorizontal, toast } from "@opal/layouts";
 import {
@@ -34,6 +37,7 @@ import { Section } from "@/layouts/general-layouts";
 import { markdown } from "@opal/utils";
 import { usePHFeatureFlag, PHFeatureFlag } from "@/lib/analytics/hooks";
 import CostOverridesPanel from "@/views/admin/CostOverridesPanel";
+import VirtualModelProfilesPanel from "@/views/admin/VirtualModelProfilesPanel";
 
 const route = ADMIN_ROUTES.LLM_MODELS;
 
@@ -326,6 +330,7 @@ export default function LanguageModelsPage() {
   const { mutate } = useSWRConfig();
   const { llmProviders: existingLlmProviders, defaultText } =
     useAdminLLMProviders();
+  const { virtualModelProfiles } = useVirtualModelProfiles();
   const isConfigurationDisabled = usePHFeatureFlag(
     PHFeatureFlag.LANGUAGE_MODEL_CONFIGURATION_DISABLED
   );
@@ -383,7 +388,7 @@ export default function LanguageModelsPage() {
     [t]
   );
 
-  if (!existingLlmProviders) {
+  if (!existingLlmProviders || !virtualModelProfiles) {
     return <PageLoader />;
   }
 
@@ -428,7 +433,12 @@ export default function LanguageModelsPage() {
       />
 
       <SettingsLayouts.Body>
-        {hasProviders ? (
+        <VirtualModelProfilesPanel
+          providers={existingLlmProviders}
+          settings={virtualModelProfiles}
+        />
+
+        {hasProviders && !virtualModelProfiles.enabled ? (
           <Card border="solid" rounding={4}>
             <InputHorizontal
               title={t("defaultModel.title")}
@@ -454,9 +464,9 @@ export default function LanguageModelsPage() {
               />
             </InputHorizontal>
           </Card>
-        ) : (
+        ) : !hasProviders ? (
           <MessageCard variant="info" title={t("noProviders.title")} />
-        )}
+        ) : null}
 
         {/* ── Available Providers (only when providers exist) ── */}
         {hasProviders && (

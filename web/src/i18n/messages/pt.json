@@ -5110,6 +5110,43 @@
           "title": "Auto-hospedados e personalizados"
         }
       },
+      "virtualProfiles": {
+        "addButton": "Adicionar perfil",
+        "defaultTag": "Padrão",
+        "deleteAria": "Excluir {name}",
+        "deleteModal": {
+          "description": "Os usuários não poderão mais selecionar este perfil.",
+          "submit": "Excluir",
+          "title": "Excluir {name}"
+        },
+        "disabledDescription": "Os usuários selecionam diretamente os modelos do provedor. Adicione perfis e ative os perfis gerenciados.",
+        "editAria": "Editar {name}",
+        "emptyDescription": "Adicione um nome simples e associe-o a um modelo de provedor configurado.",
+        "enabledDescription": "Todos os usuários veem apenas estes nomes de perfil. O Onyx resolve cada perfil para seu destino atual.",
+        "form": {
+          "createTitle": "Adicionar perfil de modelo",
+          "editTitle": "Editar perfil de modelo",
+          "nameLabel": "Nome do perfil",
+          "namePlaceholder": "Agente normal",
+          "saveButton": "Salvar",
+          "targetLabel": "Direciona para"
+        },
+        "listTitle": "Perfis de modelo",
+        "routesTo": "Direciona para {provider} · {model}",
+        "setDefaultButton": "Definir como padrão",
+        "title": "Perfis de modelo gerenciados",
+        "toasts": {
+          "defaultFailed": "Não foi possível atualizar o perfil padrão.",
+          "defaultUpdated": "Perfil padrão atualizado.",
+          "deleteFailed": "Não foi possível excluir o perfil.",
+          "deleted": "Perfil de modelo excluído.",
+          "disabled": "Perfis de modelo gerenciados desativados.",
+          "enabled": "Perfis de modelo gerenciados ativados.",
+          "saveFailed": "Não foi possível salvar o perfil.",
+          "saved": "Perfil de modelo salvo.",
+          "toggleFailed": "Não foi possível alterar os perfis de modelo gerenciados."
+        }
+      },
       "modals": {
         "access": {
           "admin": {

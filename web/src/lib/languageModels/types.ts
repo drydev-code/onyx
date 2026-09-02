@@ -168,6 +168,38 @@ export interface LLMProviderResponse<T> {
   default_craft: DefaultModel | null;
 }
 
+export interface VirtualModelProfile {
+  provider_id: number;
+  model_configuration_id: number;
+  model_name: string;
+  name: string;
+  target_model_configuration_id: number;
+  target_model_name: string;
+  target_model_display_name: string;
+  target_provider_id: number;
+  target_provider_name: string;
+  target_provider_type: string;
+  max_input_tokens: number | null;
+  reasoning_effort_max: ReasoningEffortOverride | null;
+  reasoning_effort_default: ReasoningEffortOverride | null;
+  temperature_default: number | null;
+}
+
+export interface VirtualModelProfilesResponse {
+  enabled: boolean;
+  default_model_configuration_id: number | null;
+  profiles: VirtualModelProfile[];
+}
+
+export interface VirtualModelProfileRequest {
+  name: string;
+  target_model_configuration_id: number;
+  max_input_tokens: number | null;
+  reasoning_effort_max: ReasoningEffortOverride | null;
+  reasoning_effort_default: ReasoningEffortOverride | null;
+  temperature_default: number | null;
+}
+
 export type LLMModalVariant = "onboarding" | "llm-configuration";
 
 export interface LLMProviderFormProps {

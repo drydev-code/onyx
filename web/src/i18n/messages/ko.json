@@ -5110,6 +5110,43 @@
           "title": "자체 호스팅 및 사용자 지정"
         }
       },
+      "virtualProfiles": {
+        "addButton": "프로필 추가",
+        "defaultTag": "기본값",
+        "deleteAria": "{name} 삭제",
+        "deleteModal": {
+          "description": "사용자는 더 이상 이 프로필을 선택할 수 없습니다.",
+          "submit": "삭제",
+          "title": "{name} 삭제"
+        },
+        "disabledDescription": "사용자가 제공자 모델을 직접 선택합니다. 프로필을 추가한 다음 관리형 프로필을 활성화하세요.",
+        "editAria": "{name} 편집",
+        "emptyDescription": "간단한 이름을 추가하고 구성된 제공자 모델에 연결하세요.",
+        "enabledDescription": "모든 사용자에게 이 프로필 이름만 표시됩니다. Onyx는 각 프로필을 현재 대상으로 확인합니다.",
+        "form": {
+          "createTitle": "모델 프로필 추가",
+          "editTitle": "모델 프로필 편집",
+          "nameLabel": "프로필 이름",
+          "namePlaceholder": "일반 에이전트",
+          "saveButton": "저장",
+          "targetLabel": "라우팅 대상"
+        },
+        "listTitle": "모델 프로필",
+        "routesTo": "{provider} · {model}(으)로 라우팅",
+        "setDefaultButton": "기본값으로 설정",
+        "title": "관리형 모델 프로필",
+        "toasts": {
+          "defaultFailed": "기본 프로필을 업데이트하지 못했습니다.",
+          "defaultUpdated": "기본 프로필을 업데이트했습니다.",
+          "deleteFailed": "프로필을 삭제하지 못했습니다.",
+          "deleted": "모델 프로필을 삭제했습니다.",
+          "disabled": "관리형 모델 프로필을 비활성화했습니다.",
+          "enabled": "관리형 모델 프로필을 활성화했습니다.",
+          "saveFailed": "프로필을 저장하지 못했습니다.",
+          "saved": "모델 프로필을 저장했습니다.",
+          "toggleFailed": "관리형 모델 프로필을 변경하지 못했습니다."
+        }
+      },
       "modals": {
         "access": {
           "admin": {
