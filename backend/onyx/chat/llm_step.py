@@ -1091,6 +1091,7 @@ def run_llm_step_pkt_generator(
     is_deep_research: bool = False,
     pre_answer_processing_time: float | None = None,
     timeout_override: int | None = None,
+    flow: LLMFlow = LLMFlow.CHAT_RESPONSE,
 ) -> Generator[Packet, None, tuple[LlmStepResult, bool]]:
     """Run an LLM step and stream the response as packets.
     NOTE: DO NOT TOUCH THIS FUNCTION BEFORE ASKING YUHONG, this is very finicky and
@@ -1126,6 +1127,7 @@ def run_llm_step_pkt_generator(
         pre_answer_processing_time: Optional time spent processing before the
             answer started, recorded in state_container for analytics.
         timeout_override: Optional timeout override for the LLM call.
+        flow: Operation tag recorded on the LLM generation span.
 
     Yields:
         Packet: Streaming packets containing:
@@ -1185,7 +1187,7 @@ def run_llm_step_pkt_generator(
 
     with generation_span(
         model=llm.config.model_name,
-        model_config=build_llm_model_config(llm, LLMFlow.CHAT_RESPONSE)
+        model_config=build_llm_model_config(llm, flow)
         | {
             "model_impl": "litellm",
         },
@@ -1592,6 +1594,7 @@ def run_llm_step(
     is_deep_research: bool = False,
     pre_answer_processing_time: float | None = None,
     timeout_override: int | None = None,
+    flow: LLMFlow = LLMFlow.CHAT_RESPONSE,
 ) -> tuple[LlmStepResult, bool]:
     """Wrapper around run_llm_step_pkt_generator that consumes packets and emits them.
 
@@ -1615,6 +1618,7 @@ def run_llm_step(
         is_deep_research=is_deep_research,
         pre_answer_processing_time=pre_answer_processing_time,
         timeout_override=timeout_override,
+        flow=flow,
     )
 
     while True:

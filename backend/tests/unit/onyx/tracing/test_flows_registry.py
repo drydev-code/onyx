@@ -26,6 +26,12 @@ def test_untagged_sentinels_present() -> None:
     assert LLMFlow.UNTAGGED_STREAM.value == "untagged_stream"
 
 
+def test_parallel_agent_flows_are_registered() -> None:
+    assert LLMFlow.PARALLEL_AGENT_PLANNING.value == "parallel_agent_planning"
+    assert LLMFlow.PARALLEL_AGENT_WORKER.value == "parallel_agent_worker"
+    assert LLMFlow.PARALLEL_AGENT_SYNTHESIS.value == "parallel_agent_synthesis"
+
+
 def test_image_flows_match_serialized_span_values() -> None:
     assert LLMFlow.IMAGE_GENERATION.value in IMAGE_FLOWS
     assert LLMFlow.IMAGE_EDIT.value in IMAGE_FLOWS

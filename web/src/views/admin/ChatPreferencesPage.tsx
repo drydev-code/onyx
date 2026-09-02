@@ -54,6 +54,7 @@ import {
   PYTHON_TOOL_ID,
   OPEN_URL_TOOL_ID,
   CODING_AGENT_TOOL_ID,
+  PARALLEL_AGENT_TOOL_ID,
 } from "@/lib/tools/constants";
 import {
   EmptyMessageCard,
@@ -804,6 +805,9 @@ export default function ChatPreferencesPage() {
   const codingAgentTool = availableTools.find(
     (t) => t.in_code_tool_id === CODING_AGENT_TOOL_ID
   );
+  const parallelAgentTool = availableTools.find(
+    (t) => t.in_code_tool_id === PARALLEL_AGENT_TOOL_ID
+  );
 
   // Connectors
   const { ccPairs } = useCCPairs();
@@ -1346,6 +1350,30 @@ export default function ChatPreferencesPage() {
                                 void toggleTool(codingAgentTool.id, checked)
                               }
                               disabled={!codingAgentTool}
+                            />
+                          </InputHorizontal>
+                        </Card>
+                      </Disabled>
+
+                      <Disabled disabled={!parallelAgentTool}>
+                        <Card border="solid" rounding={4}>
+                          <InputHorizontal
+                            title={t("tools.parallelAgents.title")}
+                            description={t("tools.parallelAgents.description")}
+                            disabled={!parallelAgentTool}
+                            withLabel
+                          >
+                            <Switch
+                              checked={
+                                parallelAgentTool
+                                  ? isToolEnabled(parallelAgentTool.id)
+                                  : false
+                              }
+                              onCheckedChange={(checked) =>
+                                parallelAgentTool &&
+                                void toggleTool(parallelAgentTool.id, checked)
+                              }
+                              disabled={!parallelAgentTool}
                             />
                           </InputHorizontal>
                         </Card>

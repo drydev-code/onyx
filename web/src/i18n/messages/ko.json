@@ -1657,6 +1657,10 @@
           "description": "GitHub 저장소를 조사하고 코드에 대한 질문에 답변합니다.",
           "title": "코딩 에이전트"
         },
+        "parallelAgents": {
+          "description": "격리된 읽기 전용 에이전트를 병렬로 계획, 실행 및 종합합니다.",
+          "title": "병렬 에이전트"
+        },
         "description": "채팅에서 사용할 수 있는 도구와 기능입니다. 에이전트에는 적용되지 않습니다.",
         "imageGeneration": {
           "description": "AI 기반 도구로 이미지를 생성하고 편집합니다.",

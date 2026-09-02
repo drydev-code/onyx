@@ -77,6 +77,7 @@ from onyx.tools.utils import (
     compute_tool_definition_tokens,
     generate_tools_description,
 )
+from onyx.tracing.flows import LLMFlow
 from onyx.tracing.framework.create import function_span
 from onyx.utils.logger import setup_logger
 from onyx.utils.threadpool_concurrency import run_functions_tuples_in_parallel
@@ -93,6 +94,17 @@ RESEARCH_AGENT_FORCE_REPORT_SECONDS = 12 * 60
 MAX_INTERMEDIATE_REPORT_LENGTH_TOKENS = 10000
 
 
+class ResearchAgentCancelled(Exception):
+    """Raised when a parent chat run cancels a research worker."""
+
+
+def raise_if_research_agent_cancelled(
+    cancellation_check: Callable[[], bool] | None,
+) -> None:
+    if cancellation_check and cancellation_check():
+        raise ResearchAgentCancelled
+
+
 def generate_intermediate_report(
     research_topic: str,
     history: list[ChatMessageSimple],
@@ -103,6 +115,8 @@ def generate_intermediate_report(
     emitter: Emitter,
     placement: Placement,
     reasoning_effort: ReasoningEffort = ReasoningEffort.LOW,
+    cancellation_check: Callable[[], bool] | None = None,
+    llm_flow: LLMFlow = LLMFlow.CHAT_RESPONSE,
 ) -> str:
     # NOTE: This step outputs a lot of tokens and has been observed to run for more than 10 minutes in a nontrivial percentage of
     # research tasks. This is also model / inference provider dependent.
@@ -150,9 +164,13 @@ def generate_intermediate_report(
             use_existing_tab_index=True,
             is_deep_research=True,
             timeout_override=DR_REPORT_LLM_TIMEOUT_S,
+            flow=llm_flow,
         )
 
         while True:
+            if cancellation_check and cancellation_check():
+                intermediate_report_generator.close()
+                raise ResearchAgentCancelled
             try:
                 packet = next(intermediate_report_generator)
                 # Translate AgentResponseStart/Delta packets to IntermediateReportStart/Delta
@@ -224,12 +242,15 @@ def run_research_agent_call(
     token_counter: Callable[[str], int],
     user_identity: LLMUserIdentity | None,
     reasoning_effort: ReasoningEffort = ReasoningEffort.LOW,
+    cancellation_check: Callable[[], bool] | None = None,
+    llm_flow: LLMFlow = LLMFlow.CHAT_RESPONSE,
 ) -> ResearchAgentCallResult | None:
     turn_index = research_agent_call.placement.turn_index
     tab_index = research_agent_call.placement.tab_index
     with function_span("research_agent") as span:
         span.span_data.input = str(research_agent_call.tool_args)
         try:
+            raise_if_research_agent_cancelled(cancellation_check)
             # Track start time for timeout-based forced report generation
             start_time = time.monotonic()
 
@@ -267,6 +288,7 @@ def run_research_agent_call(
             citation_mapping: dict[int, str] = {}
             most_recent_reasoning: str | None = None
             while research_cycle_count <= MAX_RESEARCH_CYCLES:
+                raise_if_research_agent_cancelled(cancellation_check)
                 # Check if we've exceeded the time limit - if so, skip LLM and generate report
                 elapsed_seconds = time.monotonic() - start_time
                 if elapsed_seconds > RESEARCH_AGENT_FORCE_REPORT_SECONDS:
@@ -384,6 +406,7 @@ def run_research_agent_call(
                     # in these situations but it at least allows a chance of recovery. None of the tool calls should
                     # be this long.
                     max_tokens=1000,
+                    flow=llm_flow,
                 )
                 if has_reasoned:
                     reasoning_cycles += 1
@@ -419,6 +442,8 @@ def run_research_agent_call(
                             turn_index=turn_index,
                             tab_index=tab_index,
                         ),
+                        cancellation_check=cancellation_check,
+                        llm_flow=llm_flow,
                     )
                     span.span_data.output = final_report if final_report else None
                     return ResearchAgentCallResult(
@@ -620,6 +645,8 @@ def run_research_agent_call(
                     turn_index=turn_index,
                     tab_index=tab_index,
                 ),
+                cancellation_check=cancellation_check,
+                llm_flow=llm_flow,
             )
             span.span_data.output = final_report if final_report else None
             return ResearchAgentCallResult(
@@ -627,6 +654,9 @@ def run_research_agent_call(
                 citation_mapping=citation_processor.get_seen_citations(),
             )
 
+        except ResearchAgentCancelled:
+            logger.info("Research agent cancelled")
+            return None
         except Exception as e:
             logger.error("Error running research agent call: %s", e)
             emitter.emit(
@@ -675,6 +705,8 @@ def run_research_agent_calls(
     citation_mapping: CitationMapping,
     user_identity: LLMUserIdentity | None = None,
     reasoning_effort: ReasoningEffort = ReasoningEffort.LOW,
+    cancellation_check: Callable[[], bool] | None = None,
+    llm_flow: LLMFlow = LLMFlow.CHAT_RESPONSE,
 ) -> CombinedResearchAgentCallResult:
     # Run all research agent calls in parallel with timeout
     functions_with_args = [
@@ -691,6 +723,8 @@ def run_research_agent_calls(
                 token_counter,
                 user_identity,
                 reasoning_effort,
+                cancellation_check,
+                llm_flow,
             ),
         )
         for research_agent_call, parent_tool_call_id in zip(

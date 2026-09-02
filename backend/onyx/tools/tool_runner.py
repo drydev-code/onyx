@@ -35,6 +35,10 @@ from onyx.tools.tool_implementations.memory.memory_tool import (
     MemoryToolOverrideKwargs,
 )
 from onyx.tools.tool_implementations.open_url.open_url_tool import OpenURLTool
+from onyx.tools.tool_implementations.parallel_agents.parallel_agent_tool import (
+    ParallelAgentTool,
+    ParallelAgentToolOverrideKwargs,
+)
 from onyx.tools.tool_implementations.python.python_tool import PythonTool
 from onyx.tools.tool_implementations.search.search_tool import SearchTool
 from onyx.tools.tool_implementations.web_search.web_search_tool import WebSearchTool
@@ -48,9 +52,6 @@ logger = setup_logger()
 QUERIES_FIELD = "queries"
 URLS_FIELD = "urls"
 GENERIC_TOOL_ERROR_MESSAGE = "Tool failed with error: {error}"
-
-# 10 minute timeout for tool execution to prevent indefinite hangs
-TOOL_EXECUTION_TIMEOUT_SECONDS = 10 * 60
 
 # Mapping of tool name to the field that should be merged when multiple calls exist
 MERGEABLE_TOOL_FIELDS: dict[str, str] = {
@@ -250,6 +251,8 @@ def run_tool_calls(
     # When False, don't pass memory context to search tools for query expansion
     # (but still pass it to the memory tool for persistence)
     inject_memories_in_prompt: bool = True,
+    # Full history for tools that must preserve the latest user instruction.
+    parallel_agent_message_history: list[ChatMessageSimple] | None = None,
 ) -> ParallelToolCallResponse:
     """Run (optionally merged) tool calls in parallel and update citation mappings.
 
@@ -354,6 +357,7 @@ def run_tool_calls(
             | PythonToolOverrideKwargs
             | MemoryToolOverrideKwargs
             | CodingAgentToolOverrideKwargs
+            | ParallelAgentToolOverrideKwargs
             | None
         ) = None
 
@@ -419,6 +423,11 @@ def run_tool_calls(
                 ),
                 chat_history=minimal_history,
             )
+        elif isinstance(tool, ParallelAgentTool):
+            override_kwargs = ParallelAgentToolOverrideKwargs(
+                parent_tool_call_id=tool_call.tool_call_id,
+                message_history=parallel_agent_message_history or message_history,
+            )
 
         tool_run_params.append((tool, tool_call, override_kwargs))
 
@@ -432,7 +441,7 @@ def run_tool_calls(
         functions_with_args,
         allow_failures=True,  # Continue even if some tools fail
         max_workers=max_concurrent_tools,
-        timeout=TOOL_EXECUTION_TIMEOUT_SECONDS,
+        timeout=max(tool.execution_timeout_seconds for tool, _, _ in tool_run_params),
     )
 
     # Process results and update citation_mapping

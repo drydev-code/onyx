@@ -1657,6 +1657,10 @@
           "description": "Investiga um repositório do GitHub e responde a perguntas sobre o código dele.",
           "title": "Agente de código"
         },
+        "parallelAgents": {
+          "description": "Planeje, execute e sintetize em paralelo agentes isolados somente para leitura.",
+          "title": "Agentes paralelos"
+        },
         "description": "Ferramentas e recursos disponíveis para o chat usar. Isso não se aplica aos agentes.",
         "imageGeneration": {
           "description": "Gera e manipula imagens com ferramentas de IA.",

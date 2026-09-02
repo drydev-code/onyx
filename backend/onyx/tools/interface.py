@@ -10,6 +10,7 @@ from onyx.server.query_and_chat.placement import Placement
 from onyx.tools.models import ToolResponse
 
 TOverride = TypeVar("TOverride")
+DEFAULT_TOOL_EXECUTION_TIMEOUT_SECONDS = 10 * 60
 
 
 class Tool(abc.ABC, Generic[TOverride]):
@@ -25,6 +26,11 @@ class Tool(abc.ABC, Generic[TOverride]):
                 f"Emitter not set on tool {self.name}. Call set_emitter() first."
             )
         return self._emitter
+
+    @property
+    def execution_timeout_seconds(self) -> float:
+        """Maximum wall time for one top-level tool batch containing this tool."""
+        return DEFAULT_TOOL_EXECUTION_TIMEOUT_SECONDS
 
     @property
     @abc.abstractmethod

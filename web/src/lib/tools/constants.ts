@@ -23,6 +23,7 @@ export const PYTHON_TOOL_ID = "PythonTool";
 export const OPEN_URL_TOOL_ID = "OpenURLTool";
 export const FILE_READER_TOOL_ID = "FileReaderTool";
 export const CODING_AGENT_TOOL_ID = "CodingAgentTool";
+export const PARALLEL_AGENT_TOOL_ID = "ParallelAgentTool";
 
 // Icon mappings for system tools
 export const SYSTEM_TOOL_ICONS: Record<
@@ -35,6 +36,7 @@ export const SYSTEM_TOOL_ICONS: Record<
   [PYTHON_TOOL_ID]: SvgTerminal,
   [OPEN_URL_TOOL_ID]: SvgLink,
   [CODING_AGENT_TOOL_ID]: SvgCpu,
+  [PARALLEL_AGENT_TOOL_ID]: SvgCpu,
 };
 
 import { ADMIN_ROUTES } from "@/lib/admin-routes";

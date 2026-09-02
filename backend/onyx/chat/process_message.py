@@ -149,6 +149,9 @@ from onyx.tools.tool_constructor import (
     SearchToolConfig,
     construct_tools,
 )
+from onyx.tools.tool_implementations.parallel_agents.parallel_agent_tool import (
+    ParallelAgentTool,
+)
 from onyx.utils.logger import setup_logger
 from onyx.utils.telemetry import mt_cloud_telemetry
 from onyx.utils.timing import log_function_time
@@ -1360,6 +1363,31 @@ def _run_models(
             model_tools = [
                 tool for tool_list in thread_tool_dict.values() for tool in tool_list
             ]
+
+            raw_agent_instructions = (
+                setup.custom_agent_prompt or setup.persona.system_prompt
+            )
+            resolved_agent_instructions = (
+                substitute_user_placeholders(
+                    raw_agent_instructions,
+                    setup.user_memory_context.user_info.placeholder_values,
+                )
+                if raw_agent_instructions
+                else None
+            )
+            for tool in model_tools:
+                if isinstance(tool, ParallelAgentTool):
+                    tool.configure_runtime(
+                        state_container=sc,
+                        tools=[
+                            candidate
+                            for candidate in model_tools
+                            if candidate is not tool
+                        ],
+                        user_identity=setup.user_identity,
+                        reasoning_effort=setup.reasoning_effort,
+                        agent_instructions=resolved_agent_instructions,
+                    )
 
             if setup.forced_tool_id and setup.forced_tool_id not in {
                 tool.id for tool in model_tools

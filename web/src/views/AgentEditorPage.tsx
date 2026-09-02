@@ -47,6 +47,7 @@ import {
   SEARCH_TOOL_ID,
   OPEN_URL_TOOL_ID,
   CODING_AGENT_TOOL_ID,
+  PARALLEL_AGENT_TOOL_ID,
 } from "@/lib/tools/constants";
 import Text from "@/refresh-components/texts/Text";
 import SimpleCollapsible from "@/refresh-components/SimpleCollapsible";
@@ -678,6 +679,9 @@ export default function AgentEditorPage({
   const codingAgentTool = availableTools?.find(
     (t) => t.in_code_tool_id === CODING_AGENT_TOOL_ID
   );
+  const parallelAgentTool = availableTools?.find(
+    (t) => t.in_code_tool_id === PARALLEL_AGENT_TOOL_ID
+  );
   const isImageGenerationAvailable = !!imageGenTool;
   const imageGenerationDisabledTooltip = isImageGenerationAvailable
     ? undefined
@@ -784,6 +788,12 @@ export default function AgentEditorPage({
       !!codingAgentTool &&
       (existingAgent?.tools?.some(
         (tool) => tool.in_code_tool_id === CODING_AGENT_TOOL_ID
+      ) ??
+        false),
+    parallel_agents:
+      !!parallelAgentTool &&
+      (existingAgent?.tools?.some(
+        (tool) => tool.in_code_tool_id === PARALLEL_AGENT_TOOL_ID
       ) ??
         false),
     // MCP servers - dynamically add fields for each server with nested tool fields
@@ -933,6 +943,9 @@ export default function AgentEditorPage({
       }
       if (values.coding_agent && codingAgentTool) {
         toolIds.push(codingAgentTool.id);
+      }
+      if (values.parallel_agents && parallelAgentTool) {
+        toolIds.push(parallelAgentTool.id);
       }
 
       // Collect enabled MCP tool IDs
@@ -1748,6 +1761,22 @@ export default function AgentEditorPage({
                                   <SwitchField
                                     name="coding_agent"
                                     disabled={!codingAgentTool}
+                                  />
+                                </InputHorizontal>
+                              </Card>
+                            </Disabled>
+
+                            <Disabled disabled={!parallelAgentTool}>
+                              <Card border="solid" rounding={4}>
+                                <InputHorizontal
+                                  withLabel="parallel_agents"
+                                  title="Parallel Agents"
+                                  description="Plan, run, and synthesize isolated read-only worker agents in parallel."
+                                  disabled={!parallelAgentTool}
+                                >
+                                  <SwitchField
+                                    name="parallel_agents"
+                                    disabled={!parallelAgentTool}
                                   />
                                 </InputHorizontal>
                               </Card>
