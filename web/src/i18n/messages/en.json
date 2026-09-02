@@ -1657,6 +1657,10 @@
           "description": "Investigate a GitHub repository and answer questions about its code.",
           "title": "Coding Agent"
         },
+        "parallelAgents": {
+          "description": "Plan, run, and synthesize isolated read-only worker agents in parallel.",
+          "title": "Parallel Agents"
+        },
         "description": "Tools and capabilities available for chat to use. This does not apply to agents.",
         "imageGeneration": {
           "description": "Generate and manipulate images using AI-powered tools.",

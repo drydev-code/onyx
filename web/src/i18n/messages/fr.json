@@ -1657,6 +1657,10 @@
           "description": "Explorez un dépôt GitHub et répondez à des questions sur son code.",
           "title": "Agent de code"
         },
+        "parallelAgents": {
+          "description": "Planifiez, exécutez et synthétisez en parallèle des agents isolés en lecture seule.",
+          "title": "Agents parallèles"
+        },
         "description": "Outils et fonctionnalités que la discussion peut utiliser. Cela ne s'applique pas aux agents.",
         "imageGeneration": {
           "description": "Générez et modifiez des images à l'aide d'outils basés sur l'IA.",

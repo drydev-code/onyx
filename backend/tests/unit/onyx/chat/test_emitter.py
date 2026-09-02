@@ -5,6 +5,7 @@ code path — no standalone bus.
 """
 
 import queue
+import threading
 
 from onyx.chat.emitter import Emitter
 from onyx.server.query_and_chat.placement import Placement
@@ -77,6 +78,21 @@ class TestEmitterQueueRouting:
         _, t2 = mq.get_nowait()
         assert t1.placement.turn_index == 0
         assert t2.placement.turn_index == 1
+
+    def test_cancelled_emitter_reports_state_and_drops_packets(self) -> None:
+        merged_queue: queue.Queue = queue.Queue()
+        drain_done = threading.Event()
+        emitter = Emitter(
+            merged_queue=merged_queue,
+            drain_done=drain_done,
+        )
+
+        assert emitter.is_cancelled() is False
+        drain_done.set()
+        assert emitter.is_cancelled() is True
+
+        emitter.emit(_packet())
+        assert merged_queue.empty()
 
 
 # ---------------------------------------------------------------------------

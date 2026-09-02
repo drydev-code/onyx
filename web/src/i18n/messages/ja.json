@@ -1657,6 +1657,10 @@
           "description": "GitHub リポジトリを調査し、そのコードに関する質問に回答します。",
           "title": "コーディングエージェント"
         },
+        "parallelAgents": {
+          "description": "分離された読み取り専用エージェントを並列で計画、実行、統合します。",
+          "title": "並列エージェント"
+        },
         "description": "チャットで使用できるツールと機能です。エージェントには適用されません。",
         "imageGeneration": {
           "description": "AI ツールを使用して画像を生成・加工します。",

@@ -66,6 +66,14 @@ const isCodingAgentTool = (tool: ToolSnapshot): boolean => {
   );
 };
 
+const isParallelAgentTool = (tool: ToolSnapshot): boolean => {
+  return (
+    tool.in_code_tool_id === "ParallelAgentTool" ||
+    tool.name === "parallel_agents" ||
+    tool.display_name?.toLowerCase().includes("parallel agent")
+  );
+};
+
 export function getIconForAction(
   action: ToolSnapshot
 ): (props: IconProps) => JSX.Element {
@@ -76,6 +84,7 @@ export function getIconForAction(
   if (isOpenUrlTool(action)) return SvgLink;
   if (isCodeInterpreterTool(action)) return SvgTerminal;
   if (isCodingAgentTool(action)) return SvgCpu;
+  if (isParallelAgentTool(action)) return SvgCpu;
   return SvgCpu;
 }
 

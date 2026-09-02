@@ -14,7 +14,7 @@ from onyx.db.chat import (
     get_db_search_doc_by_id,
     translate_db_search_doc_to_saved_search_doc,
 )
-from onyx.db.models import ChatMessage
+from onyx.db.models import ChatMessage, ToolCall
 from onyx.db.tools import get_tool_by_id
 from onyx.deep_research.dr_mock_tools import (
     RESEARCH_AGENT_IN_CODE_ID,
@@ -32,11 +32,14 @@ from onyx.server.query_and_chat.streaming_models import (
     CustomToolDelta,
     CustomToolErrorInfo,
     CustomToolStart,
+    DeepResearchPlanDelta,
+    DeepResearchPlanStart,
     FileReaderResult,
     FileReaderStart,
     GeneratedImage,
     ImageGenerationFinal,
     ImageGenerationToolStart,
+    IntermediateReportCitedDocs,
     IntermediateReportDelta,
     IntermediateReportStart,
     MemoryToolDelta,
@@ -66,6 +69,9 @@ from onyx.tools.tool_implementations.images.image_generation_tool import (
 )
 from onyx.tools.tool_implementations.memory.memory_tool import MemoryTool
 from onyx.tools.tool_implementations.open_url.open_url_tool import OpenURLTool
+from onyx.tools.tool_implementations.parallel_agents.parallel_agent_tool import (
+    ParallelAgentTool,
+)
 from onyx.tools.tool_implementations.python.python_tool import PythonTool
 from onyx.tools.tool_implementations.search.search_tool import SearchTool
 from onyx.tools.tool_implementations.web_search.web_search_tool import WebSearchTool
@@ -324,6 +330,205 @@ def create_research_agent_packets(
         )
     )
 
+    return packets
+
+
+def _set_nested_packet_placement(
+    packets: list[Packet],
+    *,
+    turn_index: int,
+    tab_index: int,
+    sub_turn_index: int,
+) -> list[Packet]:
+    placement = Placement(
+        turn_index=turn_index,
+        tab_index=tab_index,
+        sub_turn_index=sub_turn_index,
+    )
+    return [packet.model_copy(update={"placement": placement}) for packet in packets]
+
+
+def _create_parallel_worker_nested_packets(
+    tool_call: ToolCall,
+    *,
+    turn_index: int,
+    tab_index: int,
+    db_session: Session,
+) -> list[Packet]:
+    try:
+        tool = get_tool_by_id(tool_call.tool_id, db_session)
+    except Exception as error:
+        logger.warning("Could not load nested tool call %s: %s", tool_call.id, error)
+        return []
+
+    packets: list[Packet]
+    if tool.in_code_tool_id in [SearchTool.__name__, WebSearchTool.__name__]:
+        queries = cast(list[str], tool_call.tool_call_arguments.get("queries", []))
+        search_docs = [
+            translate_db_search_doc_to_saved_search_doc(document)
+            for document in tool_call.search_docs
+        ]
+        packets = create_search_packets(
+            search_queries=queries,
+            search_docs=search_docs,
+            is_internet_search=tool.in_code_tool_id == WebSearchTool.__name__,
+            turn_index=turn_index,
+            tab_index=tab_index,
+        )
+    elif tool.in_code_tool_id == OpenURLTool.__name__:
+        fetch_docs = [
+            translate_db_search_doc_to_saved_search_doc(document)
+            for document in tool_call.search_docs
+        ]
+        urls = cast(list[str], tool_call.tool_call_arguments.get("urls", []))
+        packets = create_fetch_packets(
+            fetch_docs=fetch_docs,
+            urls=urls,
+            turn_index=turn_index,
+            tab_index=tab_index,
+        )
+    elif tool.in_code_tool_id == FileReaderTool.__name__:
+        packets = create_file_reader_packets(
+            summary_json=tool_call.tool_call_response or "",
+            turn_index=turn_index,
+            tab_index=tab_index,
+        )
+    else:
+        return []
+
+    return _set_nested_packet_placement(
+        packets,
+        turn_index=turn_index,
+        tab_index=tab_index,
+        sub_turn_index=tool_call.turn_number,
+    )
+
+
+def create_parallel_agent_packets(
+    tool_call: ToolCall,
+    *,
+    turn_index: int,
+    db_session: Session,
+) -> list[Packet]:
+    worker_calls = sorted(
+        tool_call.tool_call_children,
+        key=lambda child: child.tab_index,
+    )
+    base_tab_index = tool_call.tab_index
+    packets: list[Packet] = [
+        Packet(
+            placement=Placement(turn_index=turn_index),
+            obj=TopLevelBranching(num_parallel_branches=len(worker_calls) + 2),
+        ),
+        Packet(
+            placement=Placement(
+                turn_index=turn_index,
+                tab_index=base_tab_index,
+            ),
+            obj=DeepResearchPlanStart(),
+        ),
+    ]
+
+    plan_lines = []
+    for index, worker_call in enumerate(worker_calls, start=1):
+        title = cast(
+            str, worker_call.tool_call_arguments.get("title") or f"Task {index}"
+        )
+        instruction = cast(
+            str,
+            worker_call.tool_call_arguments.get(RESEARCH_AGENT_TASK_KEY) or "",
+        )
+        plan_lines.append(f"{index}. **{title}** — {instruction}")
+
+    plan_placement = Placement(
+        turn_index=turn_index,
+        tab_index=base_tab_index,
+    )
+    packets.extend(
+        [
+            Packet(
+                placement=plan_placement,
+                obj=DeepResearchPlanDelta(content="\n".join(plan_lines)),
+            ),
+            Packet(placement=plan_placement, obj=SectionEnd()),
+        ]
+    )
+
+    for worker_call in worker_calls:
+        worker_placement = Placement(
+            turn_index=turn_index,
+            tab_index=worker_call.tab_index,
+        )
+        instruction = cast(
+            str,
+            worker_call.tool_call_arguments.get(RESEARCH_AGENT_TASK_KEY)
+            or "Could not fetch saved worker task.",
+        )
+        packets.append(
+            Packet(
+                placement=worker_placement,
+                obj=ResearchAgentStart(research_task=instruction),
+            )
+        )
+        for nested_call in sorted(
+            worker_call.tool_call_children,
+            key=lambda child: (child.turn_number, child.tab_index),
+        ):
+            packets.extend(
+                _create_parallel_worker_nested_packets(
+                    nested_call,
+                    turn_index=turn_index,
+                    tab_index=worker_call.tab_index,
+                    db_session=db_session,
+                )
+            )
+        if worker_call.tool_call_response:
+            packets.extend(
+                [
+                    Packet(placement=worker_placement, obj=IntermediateReportStart()),
+                    Packet(
+                        placement=worker_placement,
+                        obj=IntermediateReportDelta(
+                            content=worker_call.tool_call_response
+                        ),
+                    ),
+                ]
+            )
+        packets.append(Packet(placement=worker_placement, obj=SectionEnd()))
+
+    synthesis_placement = Placement(
+        turn_index=turn_index,
+        tab_index=base_tab_index + len(worker_calls) + 1,
+    )
+    packets.append(
+        Packet(
+            placement=synthesis_placement,
+            obj=ResearchAgentStart(
+                research_task="Synthesize all worker reports into one result."
+            ),
+        )
+    )
+    if tool_call.tool_call_response:
+        cited_docs = [
+            SearchDoc(
+                **translate_db_search_doc_to_saved_search_doc(document).model_dump()
+            )
+            for document in tool_call.search_docs
+        ]
+        packets.extend(
+            [
+                Packet(placement=synthesis_placement, obj=IntermediateReportStart()),
+                Packet(
+                    placement=synthesis_placement,
+                    obj=IntermediateReportDelta(content=tool_call.tool_call_response),
+                ),
+                Packet(
+                    placement=synthesis_placement,
+                    obj=IntermediateReportCitedDocs(cited_docs=cited_docs or None),
+                ),
+            ]
+        )
+    packets.append(Packet(placement=synthesis_placement, obj=SectionEnd()))
     return packets
 
 
@@ -684,6 +889,15 @@ def translate_assistant_message_to_packets(
                                 answer=tool_call.tool_call_response,
                                 turn_index=turn_num,
                                 tab_index=tool_call.tab_index,
+                            )
+                        )
+
+                    elif tool.in_code_tool_id == ParallelAgentTool.__name__:
+                        turn_tool_packets.extend(
+                            create_parallel_agent_packets(
+                                tool_call,
+                                turn_index=turn_num,
+                                db_session=db_session,
                             )
                         )
 

@@ -39,6 +39,10 @@ class Emitter:
         )
         self._merged_queue.put((self._model_idx, tagged))
 
+    def is_cancelled(self) -> bool:
+        """Return whether the stream consumer stopped this model run."""
+        return self._drain_done is not None and self._drain_done.is_set()
+
 
 class NullEmitter(Emitter):
     """Emitter that silently discards all packets.

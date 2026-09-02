@@ -20,7 +20,8 @@ from onyx.db.models import Persona, User
 from onyx.db.models import Tool as ToolDBModel
 from onyx.db.oauth_config import get_oauth_config
 from onyx.db.search_settings import get_current_search_settings
-from onyx.db.tools import get_builtin_tool
+from onyx.db.tools import get_builtin_tool, get_tool_by_name
+from onyx.deep_research.dr_mock_tools import RESEARCH_AGENT_TOOL_NAME
 from onyx.document_index.factory import get_default_document_index
 from onyx.image_gen.interfaces import ImageGenerationProviderCredentials
 from onyx.llm.interfaces import LLM, LLMConfig
@@ -45,6 +46,9 @@ from onyx.tools.tool_implementations.images.image_generation_tool import (
 from onyx.tools.tool_implementations.mcp.mcp_tool import MCPTool
 from onyx.tools.tool_implementations.memory.memory_tool import MemoryTool
 from onyx.tools.tool_implementations.open_url.open_url_tool import OpenURLTool
+from onyx.tools.tool_implementations.parallel_agents.parallel_agent_tool import (
+    ParallelAgentTool,
+)
 from onyx.tools.tool_implementations.python.python_tool import PythonTool
 from onyx.tools.tool_implementations.search.search_tool import SearchTool
 from onyx.tools.tool_implementations.web_search.web_search_tool import WebSearchTool
@@ -346,6 +350,21 @@ def _construct_tools_impl(
                 tool_dict[db_tool_model.id] = [
                     CodingAgentTool(
                         tool_id=db_tool_model.id,
+                        emitter=emitter,
+                        llm=llm,
+                    )
+                ]
+
+            # Handle Parallel Agent Tool
+            elif tool_cls.__name__ == ParallelAgentTool.__name__:
+                worker_tool_id = get_tool_by_name(
+                    RESEARCH_AGENT_TOOL_NAME,
+                    db_session,
+                ).id
+                tool_dict[db_tool_model.id] = [
+                    ParallelAgentTool(
+                        tool_id=db_tool_model.id,
+                        worker_tool_id=worker_tool_id,
                         emitter=emitter,
                         llm=llm,
                     )

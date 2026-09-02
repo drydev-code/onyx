@@ -1657,6 +1657,10 @@
           "description": "调查 GitHub 仓库并回答有关其代码的问题。",
           "title": "编程智能体"
         },
+        "parallelAgents": {
+          "description": "并行规划、运行并汇总隔离的只读工作智能体。",
+          "title": "并行智能体"
+        },
         "description": "对话可以使用的工具和能力。此项不适用于智能体。",
         "imageGeneration": {
           "description": "使用 AI 工具生成和处理图像。",
