@@ -15,19 +15,20 @@ Covers:
 
 import json
 from io import StringIO
-from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from onyx.llm.codex_cli import _build_codex_usage
-from onyx.llm.codex_cli import _CODEX_DISABLE_WEB_TOOL_FLAGS
-from onyx.llm.codex_cli import _CODEX_OUTPUT_MAX_CHARS
-from onyx.llm.codex_cli import _format_codex_command_result
-from onyx.llm.codex_cli import _format_codex_command_start
-from onyx.llm.codex_cli import CodexCLI
+from onyx.llm.codex_cli import (
+    _CODEX_DISABLE_WEB_TOOL_FLAGS,
+    _CODEX_OUTPUT_MAX_CHARS,
+    CodexCLI,
+    _build_codex_usage,
+    _format_codex_command_result,
+    _format_codex_command_start,
+)
 from onyx.llm.model_response import ModelResponseStream
-from onyx.llm.models import UserMessage
+from onyx.llm.models import ReasoningEffort, UserMessage
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -76,6 +77,8 @@ def test_stream_command_uses_json_flag() -> None:
     assert "--json" in cmd
     assert "exec" in cmd
     assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+    assert "--sandbox" not in cmd
+    assert 'approval_policy="never"' not in cmd
     assert "--skip-git-repo-check" in cmd
     assert "--ephemeral" in cmd
 
@@ -114,6 +117,21 @@ def test_stream_command_includes_instructions() -> None:
     c_indices = [i for i, v in enumerate(cmd) if v == "-c"]
     instructions_found = any(cmd[i + 1].startswith("instructions=") for i in c_indices)
     assert instructions_found
+
+
+def test_stream_command_passes_resolved_reasoning_effort() -> None:
+    proc = _make_proc("")
+    cli = CodexCLI(
+        model_name="gpt-5.6-sol",
+        reasoning_effort_default=ReasoningEffort.ULTRA,
+        reasoning_effort_max=ReasoningEffort.MAX,
+    )
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
+        with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
+            list(cli.stream([UserMessage(content="hi")]))
+
+    cmd = mock_popen.call_args[0][0]
+    assert 'model_reasoning_effort="max"' in cmd
 
 
 # ---------------------------------------------------------------------------

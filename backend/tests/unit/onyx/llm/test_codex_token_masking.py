@@ -8,9 +8,9 @@ these masked placeholders and restore the original stored values so that
 the real tokens are never overwritten.
 """
 
+from onyx.llm.utils import is_sensitive_custom_config_key
 from onyx.server.manage.llm.api import (
     _is_masked_value_for_existing,
-    _is_sensitive_custom_config_key,
     _mask_provider_credentials,
     _mask_string,
     _restore_masked_custom_config_values,
@@ -40,20 +40,20 @@ def _make_provider_view(
 
 
 # ---------------------------------------------------------------------------
-# _is_sensitive_custom_config_key recognises token keys
+# is_sensitive_custom_config_key recognises token keys
 # ---------------------------------------------------------------------------
 
 
 def test_codex_access_token_is_sensitive() -> None:
-    assert _is_sensitive_custom_config_key("codex_access_token") is True
+    assert is_sensitive_custom_config_key("codex_access_token") is True
 
 
 def test_codex_refresh_token_is_sensitive() -> None:
-    assert _is_sensitive_custom_config_key("codex_refresh_token") is True
+    assert is_sensitive_custom_config_key("codex_refresh_token") is True
 
 
 def test_non_sensitive_key_is_not_sensitive() -> None:
-    assert _is_sensitive_custom_config_key("display_name") is False
+    assert is_sensitive_custom_config_key("display_name") is False
 
 
 # ---------------------------------------------------------------------------

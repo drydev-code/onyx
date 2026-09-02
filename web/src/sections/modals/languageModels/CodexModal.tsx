@@ -1,26 +1,30 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useSWRConfig } from "swr";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFormikContext } from "formik";
-import { LLMProviderFormProps, LLMProviderName } from "@/lib/languageModels/types";
+import { useTranslations } from "next-intl";
+import { useSWRConfig } from "swr";
+import { Button, Text } from "@opal/components";
+import { InputDivider, toast } from "@opal/layouts";
 import {
-  useInitialValues,
-  buildValidationSchema,
+  LLMProviderFormProps,
+  LLMProviderName,
+} from "@/lib/languageModels/types";
+import {
   BaseLLMFormValues,
+  buildValidationSchema,
+  useInitialValues,
 } from "@/sections/modals/languageModels/utils";
 import { submitProvider } from "@/sections/modals/languageModels/svc";
 import { LLMProviderConfiguredSource } from "@/lib/analytics/utils";
 import {
   APIKeyField,
-  ModelSelectionField,
   DisplayNameField,
-  ModelAccessField,
   ModalWrapper,
+  ModelAccessField,
+  ModelSelectionField,
 } from "@/sections/modals/languageModels/shared";
-import { InputDivider } from "@opal/layouts";
 import { refreshLlmProviderCaches } from "@/lib/languageModels/cache";
-import { toast } from "@/hooks/useToast";
 
 interface CodexFormValues extends BaseLLMFormValues {
   codex_access_token: string;
@@ -29,74 +33,107 @@ interface CodexFormValues extends BaseLLMFormValues {
   codex_token_expires_at: string;
 }
 
+interface DeviceAuthStartResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+}
+
+interface DeviceAuthPollResponse {
+  status: "pending" | "authorized" | "error";
+  access_token?: string;
+  refresh_token?: string | null;
+  id_token?: string | null;
+  expires_in?: number;
+  error?: string;
+}
+
 type OAuthState =
   | { status: "idle" }
   | {
       status: "pending";
       userCode: string;
       verificationUri: string;
-      deviceCode: string;
     }
-  | {
-      status: "authorized";
-      accessToken: string;
-      refreshToken: string | null;
-      expiresAt: number;
-    }
+  | { status: "authorized" }
   | { status: "error"; message: string };
 
-/**
- * OAuth device-flow section. Rendered inside Formik context so it can
- * write token values directly via useFormikContext.
- */
+function hasCodexAuthentication(values: unknown): boolean {
+  if (typeof values !== "object" || values === null) return false;
+  const apiKey = "api_key" in values ? values.api_key : undefined;
+  const accessToken =
+    "codex_access_token" in values ? values.codex_access_token : undefined;
+  return Boolean(apiKey || accessToken);
+}
+
 function OAuthSection() {
+  const t = useTranslations("admin.languageModels.modals.codex");
   const { setFieldValue } = useFormikContext<CodexFormValues>();
   const [oauthState, setOAuthState] = useState<OAuthState>({ status: "idle" });
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const onTokenReceived = useCallback(
-    (
-      accessToken: string,
-      refreshToken: string | null,
-      expiresAt: number,
-      idToken?: string | null
-    ) => {
-      setFieldValue("codex_access_token", accessToken);
-      setFieldValue("codex_refresh_token", refreshToken ?? "");
-      setFieldValue("codex_id_token", idToken ?? "");
-      setFieldValue("codex_token_expires_at", String(expiresAt));
+  const stopPolling = useCallback(() => {
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+  }, []);
+
+  useEffect(() => stopPolling, [stopPolling]);
+
+  const storeTokens = useCallback(
+    async (response: DeviceAuthPollResponse) => {
+      const accessToken = response.access_token;
+      if (!accessToken) {
+        throw new Error(t("errors.missingAccessToken"));
+      }
+      const expiresAt =
+        Math.floor(Date.now() / 1000) + (response.expires_in ?? 3600);
+      await Promise.all([
+        setFieldValue("codex_access_token", accessToken),
+        setFieldValue("codex_refresh_token", response.refresh_token ?? ""),
+        setFieldValue("codex_id_token", response.id_token ?? ""),
+        setFieldValue("codex_token_expires_at", String(expiresAt)),
+      ]);
     },
-    [setFieldValue]
+    [setFieldValue, t]
   );
 
   const startDeviceAuth = useCallback(async () => {
+    stopPolling();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const response = await fetch("/api/admin/llm/codex/device-auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
       });
-      if (!response.ok) throw new Error("Failed to start device auth");
-      const data = await response.json();
+      if (!response.ok) throw new Error(t("errors.startFailed"));
+      const data = (await response.json()) as DeviceAuthStartResponse;
+      const expiresAt = Date.now() + data.expires_in * 1000;
+      const interval = Math.max(data.interval, 1) * 1000;
 
       setOAuthState({
         status: "pending",
         userCode: data.user_code,
         verificationUri: data.verification_uri,
-        deviceCode: data.device_code,
       });
 
-      const interval = (data.interval || 5) * 1000;
-      const pollUntil = Date.now() + data.expires_in * 1000;
-
       const poll = async () => {
-        if (Date.now() > pollUntil) {
-          setOAuthState({
-            status: "error",
-            message: "Device code expired. Please try again.",
-          });
+        if (Date.now() > expiresAt) {
+          setOAuthState({ status: "error", message: t("errors.expired") });
           return;
         }
+
         try {
-          const pollRes = await fetch(
+          const pollResponse = await fetch(
             "/api/admin/llm/codex/device-auth/poll",
             {
               method: "POST",
@@ -105,105 +142,102 @@ function OAuthSection() {
                 device_code: data.device_code,
                 user_code: data.user_code,
               }),
+              signal: controller.signal,
             }
           );
-          const pollData = await pollRes.json();
+          if (!pollResponse.ok) throw new Error(t("errors.pollFailed"));
+          const pollData =
+            (await pollResponse.json()) as DeviceAuthPollResponse;
 
           if (pollData.status === "authorized") {
-            const expiresAt =
-              Math.floor(Date.now() / 1000) + pollData.expires_in;
-            setOAuthState({
-              status: "authorized",
-              accessToken: pollData.access_token,
-              refreshToken: pollData.refresh_token,
-              expiresAt,
-            });
-            onTokenReceived(
-              pollData.access_token,
-              pollData.refresh_token,
-              expiresAt,
-              pollData.id_token
-            );
+            await storeTokens(pollData);
+            setOAuthState({ status: "authorized" });
+            stopPolling();
             return;
           }
           if (pollData.status === "error") {
-            setOAuthState({ status: "error", message: pollData.error });
+            setOAuthState({
+              status: "error",
+              message: pollData.error || t("errors.pollFailed"),
+            });
+            stopPolling();
             return;
           }
-          setTimeout(poll, interval);
-        } catch {
-          setTimeout(poll, interval);
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          if (Date.now() > expiresAt) {
+            setOAuthState({
+              status: "error",
+              message: t("errors.expired"),
+            });
+            return;
+          }
         }
+
+        pollTimeoutRef.current = setTimeout(() => void poll(), interval);
       };
 
-      setTimeout(poll, interval);
-    } catch (e) {
+      pollTimeoutRef.current = setTimeout(() => void poll(), interval);
+    } catch (error) {
+      if (controller.signal.aborted) return;
       setOAuthState({
         status: "error",
-        message: e instanceof Error ? e.message : "Unknown error",
+        message: error instanceof Error ? error.message : t("errors.unknown"),
       });
     }
-  }, [onTokenReceived]);
+  }, [stopPolling, storeTokens, t]);
 
   return (
-    <div className="space-y-3">
-      <label className="text-sm font-medium">Authentication</label>
-      <p className="text-xs text-muted-foreground">
-        Sign in with your ChatGPT account via OAuth, or provide an API key
-        below.
-      </p>
+    <div className="flex flex-col gap-3 px-4">
+      <Text font="main-ui-action">{t("authentication.title")}</Text>
+      <Text font="secondary-body" color="text-03">
+        {t("authentication.description")}
+      </Text>
 
       {oauthState.status === "idle" && (
-        <button
-          type="button"
-          className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700"
-          onClick={startDeviceAuth}
-        >
-          Sign in with ChatGPT
-        </button>
+        <Button onClick={() => void startDeviceAuth()} width="fit">
+          {t("signInButton.label")}
+        </Button>
       )}
 
       {oauthState.status === "pending" && (
-        <div className="p-4 bg-muted rounded-md space-y-2">
-          <p className="text-sm">
-            Go to{" "}
-            <a
-              href={oauthState.verificationUri}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 underline"
-            >
-              {oauthState.verificationUri}
-            </a>{" "}
-            and enter this code:
-          </p>
-          <p className="text-2xl font-mono font-bold text-center">
+        <div className="flex flex-col gap-2 rounded-08 bg-background-tint-02 p-4">
+          <Text font="secondary-body">{t("pending.instructions")}</Text>
+          <a
+            href={oauthState.verificationUri}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-action-link-05 underline"
+          >
+            {oauthState.verificationUri}
+          </a>
+          <Text font="secondary-body">{t("pending.codePrompt")}</Text>
+          <Text font="heading-h2" color="text-04">
             {oauthState.userCode}
-          </p>
-          <p className="text-xs text-muted-foreground text-center">
-            Waiting for authorization...
-          </p>
+          </Text>
+          <Text font="secondary-body" color="text-03">
+            {t("pending.waiting")}
+          </Text>
         </div>
       )}
 
       {oauthState.status === "authorized" && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-          <p className="text-sm text-green-700">
-            Successfully authenticated with ChatGPT.
-          </p>
+        <div className="rounded-08 bg-status-success-01 p-3">
+          <Text font="secondary-body">{t("authorized.message")}</Text>
         </div>
       )}
 
       {oauthState.status === "error" && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-md space-y-2">
-          <p className="text-sm text-red-700">{oauthState.message}</p>
-          <button
-            type="button"
-            className="text-xs text-red-600 underline"
-            onClick={startDeviceAuth}
+        <div className="flex flex-col gap-2 rounded-08 bg-status-error-01 p-3">
+          <Text font="secondary-body">{oauthState.message}</Text>
+          <Button
+            prominence="tertiary"
+            size="sm"
+            onClick={() => void startDeviceAuth()}
+            width="fit"
           >
-            Try again
-          </button>
+            {t("tryAgainButton.label")}
+          </Button>
         </div>
       )}
     </div>
@@ -216,10 +250,11 @@ export default function CodexModal({
   shouldMarkAsDefault,
   onOpenChange,
   onSuccess,
+  analyticsSource,
 }: LLMProviderFormProps) {
+  const t = useTranslations("admin.languageModels.modals");
   const isOnboarding = variant === "onboarding";
   const { mutate } = useSWRConfig();
-
   const onClose = () => onOpenChange?.(false);
 
   const baseInitialValues = useInitialValues(
@@ -227,21 +262,23 @@ export default function CodexModal({
     LLMProviderName.OPENAI_CODEX,
     existingLlmProvider
   );
-
   const initialValues: CodexFormValues = {
     ...baseInitialValues,
     api_key: existingLlmProvider?.api_key ?? "",
     codex_access_token:
-      existingLlmProvider?.custom_config?.["codex_access_token"] ?? "",
+      existingLlmProvider?.custom_config?.codex_access_token ?? "",
     codex_refresh_token:
-      existingLlmProvider?.custom_config?.["codex_refresh_token"] ?? "",
-    codex_id_token:
-      existingLlmProvider?.custom_config?.["codex_id_token"] ?? "",
+      existingLlmProvider?.custom_config?.codex_refresh_token ?? "",
+    codex_id_token: existingLlmProvider?.custom_config?.codex_id_token ?? "",
     codex_token_expires_at:
-      existingLlmProvider?.custom_config?.["codex_token_expires_at"] ?? "",
+      existingLlmProvider?.custom_config?.codex_token_expires_at ?? "",
   };
 
-  const validationSchema = buildValidationSchema(isOnboarding);
+  const validationSchema = buildValidationSchema(t, isOnboarding).test(
+    "codex-auth",
+    t("codex.validation.authenticationRequired"),
+    hasCodexAuthentication
+  );
 
   return (
     <ModalWrapper<CodexFormValues>
@@ -251,21 +288,19 @@ export default function CodexModal({
       initialValues={initialValues}
       validationSchema={validationSchema}
       onSubmit={async (values, { setSubmitting, setStatus }) => {
-        const customConfig: Record<string, string> = {};
-        if (values.codex_access_token) {
-          customConfig["codex_access_token"] = values.codex_access_token;
-        }
-        if (values.codex_refresh_token) {
-          customConfig["codex_refresh_token"] = values.codex_refresh_token;
-        }
-        if (values.codex_id_token) {
-          customConfig["codex_id_token"] = values.codex_id_token;
-        }
-        if (values.codex_token_expires_at) {
-          customConfig["codex_token_expires_at"] = String(
-            values.codex_token_expires_at
-          );
-        }
+        const customConfig = {
+          ...existingLlmProvider?.custom_config,
+        };
+        const tokenValues = {
+          codex_access_token: values.codex_access_token,
+          codex_refresh_token: values.codex_refresh_token,
+          codex_id_token: values.codex_id_token,
+          codex_token_expires_at: values.codex_token_expires_at,
+        };
+        Object.entries(tokenValues).forEach(([key, value]) => {
+          if (value) customConfig[key] = value;
+          else delete customConfig[key];
+        });
 
         const submitValues: CodexFormValues = {
           ...values,
@@ -275,9 +310,12 @@ export default function CodexModal({
         };
 
         await submitProvider<CodexFormValues>({
-          analyticsSource: isOnboarding
-            ? LLMProviderConfiguredSource.CHAT_ONBOARDING
-            : LLMProviderConfiguredSource.ADMIN_PAGE,
+          t,
+          analyticsSource:
+            analyticsSource ??
+            (isOnboarding
+              ? LLMProviderConfiguredSource.CHAT_ONBOARDING
+              : LLMProviderConfiguredSource.ADMIN_PAGE),
           providerName: LLMProviderName.OPENAI_CODEX,
           values: submitValues,
           initialValues,
@@ -293,8 +331,8 @@ export default function CodexModal({
               await refreshLlmProviderCaches(mutate);
               toast.success(
                 existingLlmProvider
-                  ? "Provider updated successfully!"
-                  : "Provider enabled successfully!"
+                  ? t("toasts.providerUpdated")
+                  : t("toasts.providerEnabled")
               );
             }
           },
@@ -304,7 +342,7 @@ export default function CodexModal({
       <OAuthSection />
 
       <InputDivider />
-      <APIKeyField providerName="OpenAI (optional, alternative to OAuth)" />
+      <APIKeyField providerName="OpenAI" optional />
 
       {!isOnboarding && (
         <>

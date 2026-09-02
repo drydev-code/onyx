@@ -5,8 +5,9 @@ import uuid
 from typing import Any
 
 import requests
-from fastapi import HTTPException
 
+from onyx.error_handling.error_codes import OnyxErrorCode
+from onyx.error_handling.exceptions import OnyxError
 from onyx.tools.tool_implementations.web_search.models import WebSearchProvider
 from onyx.tools.tool_implementations.web_search.models import WebSearchResult
 from onyx.utils.logger import setup_logger
@@ -378,7 +379,7 @@ class GLMClient(WebSearchProvider):
                 error_text = " ".join(texts)
                 raise ValueError(f"GLM search error: {error_text}")
 
-        except HTTPException:
+        except OnyxError:
             raise
         except (ValueError, requests.RequestException) as e:
             error_msg = str(e)
@@ -386,28 +387,35 @@ class GLMClient(WebSearchProvider):
             if any(
                 kw in lower
                 for kw in (
-                    "status 401", "status 403", "invalid",
-                    "unauthorized", "api key not found", "apikey",
+                    "status 401",
+                    "status 403",
+                    "invalid",
+                    "unauthorized",
+                    "api key not found",
+                    "apikey",
                 )
             ):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid GLM API key: {error_msg}",
+                raise OnyxError(
+                    OnyxErrorCode.VALIDATION_ERROR,
+                    f"Invalid GLM API key: {error_msg}",
                 ) from e
             if any(
                 kw in lower
                 for kw in (
-                    "status 429", "rate limit", "insufficient balance",
-                    "余额不足", "1113",
+                    "status 429",
+                    "rate limit",
+                    "insufficient balance",
+                    "余额不足",
+                    "1113",
                 )
             ):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"GLM API: {error_msg}",
+                raise OnyxError(
+                    OnyxErrorCode.VALIDATION_ERROR,
+                    f"GLM API: {error_msg}",
                 ) from e
-            raise HTTPException(
-                status_code=400,
-                detail=f"GLM API key validation failed: {error_msg}",
+            raise OnyxError(
+                OnyxErrorCode.VALIDATION_ERROR,
+                f"GLM API key validation failed: {error_msg}",
             ) from e
 
         logger.info("Web search provider test succeeded for GLM.")

@@ -216,7 +216,7 @@ def test_supported_reasoning_efforts(
     "provider, model_name, expected",
     [
         (
-            "openai_codex",
+            LlmProviderNames.OPENAI_CODEX,
             "gpt-5.6-sol",
             [
                 ReasoningEffort.LOW,
@@ -228,7 +228,7 @@ def test_supported_reasoning_efforts(
             ],
         ),
         (
-            "openai_codex",
+            LlmProviderNames.OPENAI_CODEX,
             "gpt-5.6-luna",
             [
                 ReasoningEffort.LOW,
@@ -239,7 +239,7 @@ def test_supported_reasoning_efforts(
             ],
         ),
         (
-            "claude_code_cli",
+            LlmProviderNames.CLAUDE_CODE_CLI,
             "claude-opus-4-8",
             [
                 ReasoningEffort.LOW,

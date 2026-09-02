@@ -18,6 +18,8 @@ DEFAULT_FEATURE_BRANCHES=(
     "feature/google-ai-studio-image"
     "feature/imagerouter"
     "feature/codex"
+    "feature/codex-collaboration-rendering"
+    "feature/codex-collaboration-arabic-i18n"
     "feature/claude-code"
     "feature/branding"
     "feature/virtual-llm-routing"
@@ -62,11 +64,13 @@ Default feature merge order:
   4. feature/google-ai-studio-image
   5. feature/imagerouter
   6. feature/codex
-  7. feature/claude-code
-  8. feature/branding
-  9. feature/virtual-llm-routing
-  10. feature/parallel-agent-orchestration
-  11. integration/fixes
+  7. feature/codex-collaboration-rendering
+  8. feature/codex-collaboration-arabic-i18n
+  9. feature/claude-code
+  10. feature/branding
+  11. feature/virtual-llm-routing
+  12. feature/parallel-agent-orchestration
+  13. integration/fixes
 EOF
 }
 

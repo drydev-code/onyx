@@ -27,7 +27,9 @@ left empty by default.
 
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -35,24 +37,22 @@ from collections.abc import Iterator
 from typing import Any
 
 from onyx.configs.model_configs import GEN_AI_TEMPERATURE
-from onyx.llm.interfaces import LanguageModelInput
-from onyx.llm.interfaces import LLM
-from onyx.llm.interfaces import LLMConfig
-from onyx.llm.interfaces import LLMUserIdentity
-from onyx.llm.model_response import ChatCompletionDeltaToolCall
-from onyx.llm.model_response import Choice
-from onyx.llm.model_response import CollaborationEvent
-from onyx.llm.model_response import Delta
-from onyx.llm.model_response import FunctionCall
-from onyx.llm.model_response import Message
-from onyx.llm.model_response import ModelResponse
-from onyx.llm.model_response import ModelResponseStream
-from onyx.llm.model_response import StreamingChoice
-from onyx.llm.model_response import Usage
-from onyx.llm.models import ReasoningEffort
-from onyx.llm.models import ToolChoiceOptions
-from onyx.llm.well_known_providers.constants import OPENAI_CODEX_ACCESS_TOKEN_KEY
+from onyx.llm.interfaces import LLM, LanguageModelInput, LLMConfig, LLMUserIdentity
+from onyx.llm.model_response import (
+    ChatCompletionDeltaToolCall,
+    Choice,
+    CollaborationEvent,
+    Delta,
+    FunctionCall,
+    Message,
+    ModelResponse,
+    ModelResponseStream,
+    StreamingChoice,
+    Usage,
+)
+from onyx.llm.models import ReasoningEffort, ToolChoiceOptions, resolve_reasoning_effort
 from onyx.llm.well_known_providers.constants import (
+    OPENAI_CODEX_ACCESS_TOKEN_KEY,
     OPENAI_CODEX_DISABLE_BUILTIN_TOOLS_KEY,
 )
 from onyx.utils.logger import setup_logger
@@ -348,6 +348,9 @@ class CodexCLI(LLM):
         custom_config: dict[str, str] | None = None,
         timeout: int | None = None,
         max_input_tokens: int = 128000,
+        reasoning_effort_default: ReasoningEffort | None = None,
+        reasoning_effort_user_default: ReasoningEffort | None = None,
+        reasoning_effort_max: ReasoningEffort | None = None,
     ):
         self._model_name = model_name
         self._temperature = (
@@ -356,6 +359,9 @@ class CodexCLI(LLM):
         self._custom_config = custom_config or {}
         self._timeout = timeout or _DEFAULT_TIMEOUT
         self._max_input_tokens = max_input_tokens
+        self._reasoning_effort_default = reasoning_effort_default
+        self._reasoning_effort_user_default = reasoning_effort_user_default
+        self._reasoning_effort_max = reasoning_effort_max
         self._cli_path = _DEFAULT_CLI_PATH
         # Default ON: disable Codex's native web search so Onyx's
         # configured search tools handle web queries instead. Admins can
@@ -371,7 +377,7 @@ class CodexCLI(LLM):
             != "false"
         )
 
-    def _setup_auth(self) -> None:
+    def _setup_auth(self, codex_home: str | None = None) -> None:
         """Ensure Codex CLI has file-based authentication available.
 
         Writes config.toml (forces file-based credential store to bypass
@@ -382,15 +388,15 @@ class CodexCLI(LLM):
         if not access_token:
             return
 
-        from onyx.llm.well_known_providers.constants import OPENAI_CODEX_ID_TOKEN_KEY
         from onyx.llm.well_known_providers.constants import (
+            OPENAI_CODEX_ID_TOKEN_KEY,
             OPENAI_CODEX_REFRESH_TOKEN_KEY,
         )
 
         refresh_token = self._custom_config.get(OPENAI_CODEX_REFRESH_TOKEN_KEY, "")
         id_token = self._custom_config.get(OPENAI_CODEX_ID_TOKEN_KEY, access_token)
 
-        codex_home = os.path.expanduser("~/.codex")
+        codex_home = codex_home or os.path.expanduser("~/.codex")
         os.makedirs(codex_home, exist_ok=True)
 
         config_path = os.path.join(codex_home, "config.toml")
@@ -433,6 +439,8 @@ class CodexCLI(LLM):
         cmd = [
             self._cli_path,
             "exec",
+            # The Onyx container is the external sandbox. A nested Codex
+            # sandbox requires Linux user namespaces that Docker blocks.
             "--dangerously-bypass-approvals-and-sandbox",
             "--skip-git-repo-check",
             "--ephemeral",
@@ -443,6 +451,17 @@ class CodexCLI(LLM):
             cmd.extend(_CODEX_DISABLE_WEB_TOOL_FLAGS)
         return cmd
 
+    def _add_reasoning_effort(self, cmd: list[str], requested: ReasoningEffort) -> None:
+        effort = resolve_reasoning_effort(
+            requested,
+            default=self._reasoning_effort_default,
+            user_default=self._reasoning_effort_user_default,
+            maximum=self._reasoning_effort_max,
+        )
+        if effort in (ReasoningEffort.AUTO, ReasoningEffort.OFF):
+            return
+        cmd.extend(["-c", f'model_reasoning_effort="{effort.value}"'])
+
     @property
     def config(self) -> LLMConfig:
         return LLMConfig(
@@ -451,6 +470,9 @@ class CodexCLI(LLM):
             temperature=self._temperature,
             custom_config=self._custom_config,
             max_input_tokens=self._max_input_tokens,
+            reasoning_effort_default=self._reasoning_effort_default,
+            reasoning_effort_user_default=self._reasoning_effort_user_default,
+            reasoning_effort_max=self._reasoning_effort_max,
             cli_tool_bridge=_CODEX_TOOL_BRIDGE or None,
         )
 
@@ -473,15 +495,19 @@ class CodexCLI(LLM):
         system_text, user_text = _extract_system_and_user(prompt)
         timeout = timeout_override or self._timeout
 
-        self._setup_auth()
-
-        import tempfile
+        codex_home = tempfile.mkdtemp(prefix="onyx-codex-")
+        try:
+            self._setup_auth(codex_home)
+        except Exception:
+            shutil.rmtree(codex_home, ignore_errors=True)
+            raise
 
         output_file = os.path.join(
             tempfile.gettempdir(), f"codex-{uuid.uuid4().hex[:8]}.txt"
         )
 
         cmd = self._build_base_cmd()
+        self._add_reasoning_effort(cmd, reasoning_effort)
         cmd.extend(["-o", output_file])
         instructions = system_text or _DEFAULT_INSTRUCTIONS
         escaped = (
@@ -491,6 +517,7 @@ class CodexCLI(LLM):
         cmd.append(user_text)
 
         env = os.environ.copy()
+        env["CODEX_HOME"] = codex_home
         env["NO_COLOR"] = "1"
         env["TERM"] = "dumb"
 
@@ -502,7 +529,8 @@ class CodexCLI(LLM):
                 stdin=subprocess.DEVNULL,
                 env=env,
             )
-        except FileNotFoundError:
+        except OSError:
+            shutil.rmtree(codex_home, ignore_errors=True)
             raise RuntimeError(
                 f"Codex CLI not found at '{self._cli_path}'. "
                 "Ensure the 'codex' CLI is installed."
@@ -528,6 +556,11 @@ class CodexCLI(LLM):
             if elapsed_idle > timeout:
                 proc.kill()
                 proc.wait()
+                try:
+                    os.unlink(output_file)
+                except OSError:
+                    pass
+                shutil.rmtree(codex_home, ignore_errors=True)
                 raise TimeoutError(f"Codex CLI idle for {timeout}s with no output")
             time.sleep(1)
 
@@ -543,6 +576,11 @@ class CodexCLI(LLM):
                 for line in error_msg.split("\n")
                 if "ERROR:" in line and "Reconnecting" not in line
             ]
+            try:
+                os.unlink(output_file)
+            except OSError:
+                pass
+            shutil.rmtree(codex_home, ignore_errors=True)
             raise RuntimeError(
                 f"Codex CLI error: "
                 f"{fatal_lines[-1] if fatal_lines else error_msg[-500:]}"
@@ -552,13 +590,14 @@ class CodexCLI(LLM):
         try:
             with open(output_file, "r") as f:
                 response_text = f.read().strip()
-        except FileNotFoundError:
+        except OSError:
             response_text = stdout_data.strip()
         finally:
             try:
                 os.unlink(output_file)
             except OSError:
                 pass
+            shutil.rmtree(codex_home, ignore_errors=True)
 
         return ModelResponse(
             id=f"codex-{uuid.uuid4().hex[:12]}",
@@ -591,7 +630,12 @@ class CodexCLI(LLM):
             )
 
         system_text, user_text = _extract_system_and_user(prompt)
-        self._setup_auth()
+        codex_home = tempfile.mkdtemp(prefix="onyx-codex-")
+        try:
+            self._setup_auth(codex_home)
+        except Exception:
+            shutil.rmtree(codex_home, ignore_errors=True)
+            raise
 
         response_id = f"codex-{uuid.uuid4().hex[:12]}"
         created = str(int(time.time()))
@@ -602,11 +646,13 @@ class CodexCLI(LLM):
         )
 
         cmd = self._build_base_cmd()
+        self._add_reasoning_effort(cmd, reasoning_effort)
         cmd.append("--json")
         cmd.extend(["-c", f'instructions="{escaped}"'])
         cmd.append(user_text)
 
         env = os.environ.copy()
+        env["CODEX_HOME"] = codex_home
         env["NO_COLOR"] = "1"
         env["TERM"] = "dumb"
 
@@ -621,6 +667,7 @@ class CodexCLI(LLM):
                 env=env,
             )
         except FileNotFoundError:
+            shutil.rmtree(codex_home, ignore_errors=True)
             raise RuntimeError(
                 f"Codex CLI not found at '{self._cli_path}'. "
                 "Ensure the 'codex' CLI is installed."
@@ -805,6 +852,7 @@ class CodexCLI(LLM):
                 logger.info("Codex stderr: %s", stderr[:2000])
             if proc.returncode and proc.returncode != 0:
                 logger.warning("Codex CLI exited with code %d", proc.returncode)
+            shutil.rmtree(codex_home, ignore_errors=True)
 
     def _dispatch_codex_event(
         self, event: dict[str, Any], response_id: str, created: str

@@ -244,6 +244,7 @@ export function WebSearchSetupModal({ state }: WebSearchSetupModalProps) {
                       title={configField.title}
                       placeholder={configField.placeholder}
                       subDescription={configField.subDescription}
+                      options={configField.options}
                     />
                   )}
                 </Modal.Body>

@@ -4470,6 +4470,12 @@
         "loading": {
           "placeholder": "Loading..."
         },
+        "modelName": {
+          "idle": "Enter any model name supported by ImageRouter.",
+          "label": "Model Name",
+          "placeholder": "Enter a supported model name",
+          "required": "Model name is required"
+        },
         "location": {
           "idle": "The Google Cloud region for your Vertex AI models. See <link>Google's documentation</link> for available regions.",
           "label": "Location",
@@ -4519,6 +4525,18 @@
         },
         "gemini3ProImagePreview": {
           "description": "Discontinued by Google Cloud on July 17, 2026. Switch to Gemini 3 Pro Image."
+        },
+        "googleAiStudioGemini25FlashImage": {
+          "description": "Gemini 2.5 Flash Image via Google AI Studio is designed for fast and efficient image generation."
+        },
+        "googleAiStudioGemini31FlashImage": {
+          "description": "Nano Banana 2 via Google AI Studio combines Nano Banana Pro quality with Flash speed, up to 4K resolution."
+        },
+        "googleAiStudioGemini3ProImage": {
+          "description": "Nano Banana Pro via Google AI Studio is designed for professional asset production with improved text rendering."
+        },
+        "imageRouter": {
+          "description": "Access ImageRouter's image generation models with one API key and specify any model supported by its API."
         },
         "openaiGptImage1": {
           "description": "A capable image generation model from OpenAI with strong prompt adherence."
@@ -5327,6 +5345,57 @@
           "validation": {
             "displayNameRequired": "Display Name is required",
             "providerNameRequired": "Provider Name is required"
+          }
+        },
+        "codex": {
+          "authentication": {
+            "description": "Sign in with your ChatGPT account, or provide an OpenAI API key below.",
+            "title": "Authentication"
+          },
+          "authorized": {
+            "message": "Successfully authenticated with ChatGPT."
+          },
+          "errors": {
+            "expired": "The device code expired. Please try again.",
+            "missingAccessToken": "The authorization response did not include an access token.",
+            "pollFailed": "Failed to check the authorization status.",
+            "startFailed": "Failed to start device authorization.",
+            "unknown": "An unknown authorization error occurred."
+          },
+          "pending": {
+            "codePrompt": "Enter this code:",
+            "instructions": "Open the authorization page in a new tab:",
+            "waiting": "Waiting for authorization..."
+          },
+          "signInButton": {
+            "label": "Sign in with ChatGPT"
+          },
+          "tryAgainButton": {
+            "label": "Try Again"
+          },
+          "validation": {
+            "authenticationRequired": "Sign in with ChatGPT or provide an OpenAI API key."
+          }
+        },
+        "claudeCode": {
+          "cliPath": {
+            "title": "CLI Path",
+            "description": "Path to the Claude Code CLI binary. Leave blank to use claude from the server PATH.",
+            "placeholder": "claude"
+          },
+          "authMode": {
+            "title": "Authentication Mode",
+            "description": "Choose how Claude Code authenticates with Anthropic.",
+            "apiKey": "API Key",
+            "oauth": "OAuth Token"
+          },
+          "oauthToken": {
+            "title": "OAuth Token",
+            "description": "Run claude setup-token on a trusted machine, then paste the generated token.",
+            "placeholder": "Paste your OAuth token"
+          },
+          "validation": {
+            "authenticationRequired": "Provide an Anthropic API key or a Claude Code OAuth token."
           }
         },
         "liteLlmProxy": {
@@ -9852,6 +9921,15 @@
           "writingCode": {
             "status": "Writing code..."
           }
+        },
+        "collaboration": {
+          "agent": "Agent {index}",
+          "completeHint": "Expand to view each agent output.",
+          "header": "Delegated agents · {completed}/{total} complete",
+          "output": "Output",
+          "task": "Task",
+          "waiting": "Waiting for this agent.",
+          "working": "Agents are working in parallel."
         },
         "reasoning": {
           "fullText": {

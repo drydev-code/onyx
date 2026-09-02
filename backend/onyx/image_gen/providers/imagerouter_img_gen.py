@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 from onyx.image_gen.interfaces import ImageGenerationProvider
 from onyx.image_gen.interfaces import ImageGenerationProviderCredentials
 from onyx.image_gen.interfaces import ReferenceImage
+from onyx.tracing.flows import LLMFlow
+from onyx.tracing.llm_utils import traced_llm_call
 
 if TYPE_CHECKING:
     from onyx.image_gen.interfaces import ImageGenerationResponse
@@ -67,13 +69,20 @@ class ImageRouterImageGenerationProvider(ImageGenerationProvider):
         # Prefix model with openai/ for LiteLLM routing to OpenAI-compatible API
         litellm_model = model if model.startswith("openai/") else f"openai/{model}"
 
-        return image_generation(
-            prompt=prompt,
-            model=litellm_model,
-            api_key=self._api_key,
-            api_base=self._api_base,
-            size=size,
-            n=n,
-            quality=quality,
-            **kwargs,
-        )
+        with traced_llm_call(
+            flow=LLMFlow.IMAGE_GENERATION,
+            model=model,
+            provider="imagerouter",
+            image_count=n,
+            input_messages=[{"role": "user", "content": prompt}],
+        ):
+            return image_generation(
+                prompt=prompt,
+                model=litellm_model,
+                api_key=self._api_key,
+                api_base=self._api_base,
+                size=size,
+                n=n,
+                quality=quality,
+                **kwargs,
+            )

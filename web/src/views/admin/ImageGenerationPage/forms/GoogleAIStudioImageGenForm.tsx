@@ -1,10 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
+import { useTranslations } from "next-intl";
+import { PasswordInputTypeIn } from "@opal/components";
 import * as Yup from "yup";
 import { FormikField } from "@/refresh-components/form/FormikField";
 import { FormField } from "@/refresh-components/form/FormField";
-import PasswordInputTypeIn from "@/refresh-components/inputs/PasswordInputTypeIn";
+import InputComboBox from "@/refresh-components/inputs/InputComboBox";
 import { ImageGenFormWrapper } from "@/views/admin/ImageGenerationPage/forms/ImageGenFormWrapper";
 import {
   ImageGenFormBaseProps,
@@ -22,19 +24,17 @@ const initialValues: GoogleAIStudioFormValues = {
   api_key: "",
 };
 
-const validationSchema = Yup.object().shape({
-  api_key: Yup.string().required("API Key is required"),
-});
-
 function GoogleAIStudioFormFields(
   props: ImageGenFormChildProps<GoogleAIStudioFormValues>
 ) {
+  const t = useTranslations("admin.imageGeneration");
   const {
     apiStatus,
     showApiMessage,
     errorMessage,
     disabled,
     isLoadingCredentials,
+    apiKeyOptions,
     resetApiState,
     imageProvider,
   } = props;
@@ -48,36 +48,61 @@ function GoogleAIStudioFormFields(
           state={apiStatus === "error" ? "error" : state}
           className="w-full"
         >
-          <FormField.Label>Google AI Studio API Key</FormField.Label>
+          <FormField.Label>{t("form.apiKey.label")}</FormField.Label>
           <FormField.Control>
-            <PasswordInputTypeIn
-              {...field}
-              onChange={(e) => {
-                field.onChange(e);
-                resetApiState();
-              }}
-              placeholder={
-                isLoadingCredentials
-                  ? "Loading..."
-                  : "Enter your Google AI Studio API key"
-              }
-              disabled={disabled}
-              error={apiStatus === "error"}
-            />
+            {apiKeyOptions.length > 0 ? (
+              <InputComboBox
+                value={field.value}
+                onChange={(event) => {
+                  helper.setValue(event.target.value);
+                  resetApiState();
+                }}
+                onValueChange={(value) => {
+                  helper.setValue(value);
+                  resetApiState();
+                }}
+                onBlur={field.onBlur}
+                options={apiKeyOptions}
+                placeholder={
+                  isLoadingCredentials
+                    ? t("form.loading.placeholder")
+                    : t("form.apiKey.comboPlaceholder")
+                }
+                disabled={disabled}
+                isError={apiStatus === "error"}
+              />
+            ) : (
+              <PasswordInputTypeIn
+                {...field}
+                onChange={(event) => {
+                  field.onChange(event);
+                  resetApiState();
+                }}
+                placeholder={
+                  isLoadingCredentials
+                    ? t("form.loading.placeholder")
+                    : t("form.apiKey.placeholder")
+                }
+                disabled={disabled}
+                error={apiStatus === "error"}
+              />
+            )}
           </FormField.Control>
           {showApiMessage ? (
             <FormField.APIMessage
               state={apiStatus}
               messages={{
-                loading: `Testing API key with ${imageProvider.title}...`,
-                success: "API key is valid. Configuration saved.",
-                error: errorMessage || "Invalid API key",
+                loading: t("form.apiKeyTest.loading", {
+                  title: imageProvider.title,
+                }),
+                success: t("form.apiKeyTest.success"),
+                error: errorMessage || t("form.apiKeyTest.error"),
               }}
             />
           ) : (
             <FormField.Message
               messages={{
-                idle: "Get your API key from aistudio.google.com",
+                idle: t("form.apiKey.idle"),
                 error: meta.error,
               }}
             />
@@ -110,17 +135,26 @@ function transformValues(
 }
 
 export function GoogleAIStudioImageGenForm(props: ImageGenFormBaseProps) {
+  const t = useTranslations("admin.imageGeneration");
   const { imageProvider, existingConfig } = props;
+
+  const validationSchema = useMemo(
+    () =>
+      Yup.object().shape({
+        api_key: Yup.string().required(t("form.apiKey.required")),
+      }),
+    [t]
+  );
 
   return (
     <ImageGenFormWrapper<GoogleAIStudioFormValues>
       {...props}
       title={
         existingConfig
-          ? `Edit ${imageProvider.title}`
-          : `Connect ${imageProvider.title}`
+          ? t("form.editHeader.title", { title: imageProvider.title })
+          : t("form.connectHeader.title", { title: imageProvider.title })
       }
-      description={imageProvider.description}
+      description={t(imageProvider.descriptionKey)}
       initialValues={initialValues}
       validationSchema={validationSchema}
       getInitialValuesFromCredentials={getInitialValuesFromCredentials}

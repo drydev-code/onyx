@@ -1,25 +1,51 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useFormikContext } from "formik";
+import { useTranslations } from "next-intl";
 import { useSWRConfig } from "swr";
-import { useField } from "formik";
-import { LLMProviderFormProps, LLMProviderName } from "@/lib/languageModels/types";
+import { InputDivider, InputPadder, InputVertical, toast } from "@opal/layouts";
 import {
-  useInitialValues,
-  buildValidationSchema,
-  BaseLLMFormValues,
-} from "@/sections/modals/languageModels/utils";
-import { submitProvider } from "@/sections/modals/languageModels/svc";
+  LLMProviderFormProps,
+  LLMProviderName,
+} from "@/lib/languageModels/types";
 import { LLMProviderConfiguredSource } from "@/lib/analytics/utils";
-import {
-  ModelSelectionField,
-  DisplayNameField,
-  ModelAccessField,
-  ModalWrapper,
-} from "@/sections/modals/languageModels/shared";
-import { InputDivider } from "@opal/layouts";
 import { refreshLlmProviderCaches } from "@/lib/languageModels/cache";
-import { toast } from "@/hooks/useToast";
+import InputSelect from "@/refresh-components/inputs/InputSelect";
+import InputSelectField from "@/refresh-components/form/InputSelectField";
+import InputTypeInField from "@/refresh-components/form/InputTypeInField";
+import PasswordInputTypeInField from "@/refresh-components/form/PasswordInputTypeInField";
+import {
+  APIKeyField,
+  DisplayNameField,
+  ModalWrapper,
+  ModelAccessField,
+  ModelSelectionField,
+} from "@/sections/modals/languageModels/shared";
+import { submitProvider } from "@/sections/modals/languageModels/svc";
+import {
+  BaseLLMFormValues,
+  buildValidationSchema,
+  useInitialValues,
+} from "@/sections/modals/languageModels/utils";
+
+const AUTH_MODE_API_KEY = "api_key";
+const AUTH_MODE_OAUTH = "oauth";
+
+function hasClaudeCodeAuthentication(values: unknown): boolean {
+  if (typeof values !== "object" || values === null) return false;
+  const authMode =
+    "custom_config_auth_mode" in values
+      ? values.custom_config_auth_mode
+      : undefined;
+  const apiKey = "api_key" in values ? values.api_key : undefined;
+  const oauthToken =
+    "custom_config_oauth_token" in values
+      ? values.custom_config_oauth_token
+      : undefined;
+  return authMode === AUTH_MODE_OAUTH
+    ? Boolean(oauthToken)
+    : Boolean(apiKey);
+}
 
 interface ClaudeCodeCLIFormValues extends BaseLLMFormValues {
   custom_config_cli_path: string;
@@ -28,158 +54,72 @@ interface ClaudeCodeCLIFormValues extends BaseLLMFormValues {
 }
 
 function CLIPathField() {
-  const [field] = useField("custom_config_cli_path");
+  const t = useTranslations("admin.languageModels.modals.claudeCode");
+
   return (
-    <div>
-      <label className="text-sm font-medium" htmlFor="custom_config_cli_path">
-        CLI Path
-      </label>
-      <p className="text-xs text-muted-foreground mb-2">
-        Path to the <code>claude</code> CLI binary. Leave empty to use the
-        default (&quot;claude&quot; on PATH).
-      </p>
-      <input
-        id="custom_config_cli_path"
-        type="text"
-        className="w-full border rounded-md px-3 py-2 text-sm"
-        placeholder="claude"
-        {...field}
-      />
-    </div>
+    <InputPadder>
+      <InputVertical
+        withLabel="custom_config_cli_path"
+        title={t("cliPath.title")}
+        subDescription={t("cliPath.description")}
+      >
+        <InputTypeInField
+          name="custom_config_cli_path"
+          aria-label={t("cliPath.title")}
+          placeholder={t("cliPath.placeholder")}
+        />
+      </InputVertical>
+    </InputPadder>
   );
 }
 
-type TokenTestState =
-  | { status: "idle" }
-  | { status: "testing" }
-  | { status: "success" }
-  | { status: "error"; message: string };
-
-function AuthModeField() {
-  const [authField, , authHelpers] = useField("custom_config_auth_mode");
-  const [tokenField, , tokenHelpers] = useField("custom_config_oauth_token");
-  const [cliPathField] = useField("custom_config_cli_path");
-  const [testState, setTestState] = useState<TokenTestState>({
-    status: "idle",
-  });
-  const isOAuth = authField.value === "oauth";
-
-  const testToken = useCallback(async () => {
-    const token = tokenField.value;
-    if (!token) return;
-
-    setTestState({ status: "testing" });
-    try {
-      const response = await fetch("/api/admin/llm/claude-cli/setup-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          oauth_token: token,
-          cli_path: cliPathField.value || "claude",
-        }),
-      });
-      const data = await response.json();
-      if (data.status === "ok") {
-        setTestState({ status: "success" });
-      } else {
-        setTestState({
-          status: "error",
-          message: data.error || "Unknown error",
-        });
-      }
-    } catch (e) {
-      setTestState({
-        status: "error",
-        message: e instanceof Error ? e.message : "Request failed",
-      });
-    }
-  }, [tokenField.value, cliPathField.value]);
+function AuthenticationFields() {
+  const t = useTranslations("admin.languageModels.modals.claudeCode");
+  const { values } = useFormikContext<ClaudeCodeCLIFormValues>();
+  const isOAuth = values.custom_config_auth_mode === AUTH_MODE_OAUTH;
 
   return (
-    <div>
-      <label className="text-sm font-medium">Authentication Mode</label>
-      <p className="text-xs text-muted-foreground mb-2">
-        Choose how the CLI authenticates with Anthropic.
-      </p>
-      <div className="flex gap-4">
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input
-            type="radio"
-            name="custom_config_auth_mode"
-            value="api_key"
-            checked={!isOAuth}
-            onChange={() => authHelpers.setValue("api_key")}
-          />
-          API Key
-        </label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input
-            type="radio"
-            name="custom_config_auth_mode"
-            value="oauth"
-            checked={isOAuth}
-            onChange={() => authHelpers.setValue("oauth")}
-          />
-          OAuth Token
-        </label>
-      </div>
-      {isOAuth && (
-        <div className="mt-3 space-y-3">
-          <div>
-            <label
-              className="text-sm font-medium"
-              htmlFor="custom_config_oauth_token"
-            >
-              OAuth Token
-            </label>
-            <p className="text-xs text-muted-foreground mb-2">
-              Generate a token at{" "}
-              <a
-                href="https://console.anthropic.com/settings/oauth-tokens"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 underline"
-              >
-                console.anthropic.com
-              </a>{" "}
-              or run <code>claude setup-token</code> locally, then paste it
-              here.
-            </p>
-            <input
-              id="custom_config_oauth_token"
-              type="password"
-              className="w-full border rounded-md px-3 py-2 text-sm font-mono"
-              placeholder="Paste your OAuth token..."
-              value={tokenField.value || ""}
-              onChange={(e) => {
-                tokenHelpers.setValue(e.target.value);
-                if (testState.status !== "idle") {
-                  setTestState({ status: "idle" });
-                }
-              }}
+    <>
+      <InputPadder>
+        <InputVertical
+          withLabel="custom_config_auth_mode"
+          title={t("authMode.title")}
+          subDescription={t("authMode.description")}
+        >
+          <InputSelectField name="custom_config_auth_mode">
+            <InputSelect.Trigger aria-label={t("authMode.title")} />
+            <InputSelect.Content>
+              <InputSelect.Item value={AUTH_MODE_API_KEY}>
+                {t("authMode.apiKey")}
+              </InputSelect.Item>
+              <InputSelect.Item value={AUTH_MODE_OAUTH}>
+                {t("authMode.oauth")}
+              </InputSelect.Item>
+            </InputSelect.Content>
+          </InputSelectField>
+        </InputVertical>
+      </InputPadder>
+
+      <InputDivider />
+
+      {isOAuth ? (
+        <InputPadder>
+          <InputVertical
+            withLabel="custom_config_oauth_token"
+            title={t("oauthToken.title")}
+            subDescription={t("oauthToken.description")}
+          >
+            <PasswordInputTypeInField
+              name="custom_config_oauth_token"
+              aria-label={t("oauthToken.title")}
+              placeholder={t("oauthToken.placeholder")}
             />
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={testToken}
-              disabled={!tokenField.value || testState.status === "testing"}
-            >
-              {testState.status === "testing" ? "Testing..." : "Test Token"}
-            </button>
-            {testState.status === "success" && (
-              <span className="text-sm text-green-700">
-                Token validated successfully
-              </span>
-            )}
-            {testState.status === "error" && (
-              <span className="text-sm text-red-700">{testState.message}</span>
-            )}
-          </div>
-        </div>
+          </InputVertical>
+        </InputPadder>
+      ) : (
+        <APIKeyField providerName="Anthropic" />
       )}
-    </div>
+    </>
   );
 }
 
@@ -189,10 +129,11 @@ export default function ClaudeCodeCLIModal({
   shouldMarkAsDefault,
   onOpenChange,
   onSuccess,
+  analyticsSource,
 }: LLMProviderFormProps) {
+  const t = useTranslations("admin.languageModels.modals");
   const isOnboarding = variant === "onboarding";
   const { mutate } = useSWRConfig();
-
   const onClose = () => onOpenChange?.(false);
 
   const baseInitialValues = useInitialValues(
@@ -200,23 +141,21 @@ export default function ClaudeCodeCLIModal({
     LLMProviderName.CLAUDE_CODE_CLI,
     existingLlmProvider
   );
-
-  const existingCliPath =
-    existingLlmProvider?.custom_config?.["cli_path"] ?? "";
-  const existingAuthMode =
-    existingLlmProvider?.custom_config?.["auth_mode"] ?? "api_key";
-  const existingOAuthToken =
-    existingLlmProvider?.custom_config?.["oauth_token"] ?? "";
-
   const initialValues: ClaudeCodeCLIFormValues = {
     ...baseInitialValues,
     api_key: existingLlmProvider?.api_key ?? "",
-    custom_config_cli_path: existingCliPath,
-    custom_config_auth_mode: existingAuthMode,
-    custom_config_oauth_token: existingOAuthToken,
+    custom_config_cli_path: existingLlmProvider?.custom_config?.cli_path ?? "",
+    custom_config_auth_mode:
+      existingLlmProvider?.custom_config?.auth_mode ?? AUTH_MODE_API_KEY,
+    custom_config_oauth_token:
+      existingLlmProvider?.custom_config?.oauth_token ?? "",
   };
 
-  const validationSchema = buildValidationSchema(isOnboarding);
+  const validationSchema = buildValidationSchema(t, isOnboarding).test(
+    "claude-code-auth",
+    t("claudeCode.validation.authenticationRequired"),
+    hasClaudeCodeAuthentication
+  );
 
   return (
     <ModalWrapper<ClaudeCodeCLIFormValues>
@@ -226,33 +165,40 @@ export default function ClaudeCodeCLIModal({
       initialValues={initialValues}
       validationSchema={validationSchema}
       onSubmit={async (values, { setSubmitting, setStatus }) => {
-        const customConfig: Record<string, string> = {};
-        if (values.custom_config_cli_path) {
-          customConfig["cli_path"] = values.custom_config_cli_path;
-        }
-        if (values.custom_config_auth_mode) {
-          customConfig["auth_mode"] = values.custom_config_auth_mode;
-        }
+        const customConfig = {
+          ...existingLlmProvider?.custom_config,
+        };
+        const cliPath = values.custom_config_cli_path.trim();
+        if (cliPath) customConfig.cli_path = cliPath;
+        else delete customConfig.cli_path;
+
+        customConfig.auth_mode = values.custom_config_auth_mode;
+        delete customConfig.claude_code_disable_builtin_tools;
         if (
-          values.custom_config_auth_mode === "oauth" &&
+          values.custom_config_auth_mode === AUTH_MODE_OAUTH &&
           values.custom_config_oauth_token
         ) {
-          customConfig["oauth_token"] = values.custom_config_oauth_token;
+          customConfig.oauth_token = values.custom_config_oauth_token;
+        } else {
+          delete customConfig.oauth_token;
         }
 
         const submitValues: ClaudeCodeCLIFormValues = {
           ...values,
           custom_config: customConfig,
           api_key:
-            values.custom_config_auth_mode === "oauth"
+            values.custom_config_auth_mode === AUTH_MODE_OAUTH
               ? "not-required"
-              : values.api_key || "not-required",
+              : values.api_key,
         };
 
         await submitProvider<ClaudeCodeCLIFormValues>({
-          analyticsSource: isOnboarding
-            ? LLMProviderConfiguredSource.CHAT_ONBOARDING
-            : LLMProviderConfiguredSource.ADMIN_PAGE,
+          t,
+          analyticsSource:
+            analyticsSource ??
+            (isOnboarding
+              ? LLMProviderConfiguredSource.CHAT_ONBOARDING
+              : LLMProviderConfiguredSource.ADMIN_PAGE),
           providerName: LLMProviderName.CLAUDE_CODE_CLI,
           values: submitValues,
           initialValues,
@@ -268,8 +214,8 @@ export default function ClaudeCodeCLIModal({
               await refreshLlmProviderCaches(mutate);
               toast.success(
                 existingLlmProvider
-                  ? "Provider updated successfully!"
-                  : "Provider enabled successfully!"
+                  ? t("toasts.providerUpdated")
+                  : t("toasts.providerEnabled")
               );
             }
           },
@@ -279,7 +225,7 @@ export default function ClaudeCodeCLIModal({
       <CLIPathField />
 
       <InputDivider />
-      <AuthModeField />
+      <AuthenticationFields />
 
       {!isOnboarding && (
         <>

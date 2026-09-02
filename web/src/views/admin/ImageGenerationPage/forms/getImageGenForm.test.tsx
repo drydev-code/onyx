@@ -1,46 +1,24 @@
-/**
- * Integration Test: getImageGenForm factory
- *
- * Verifies that the factory function routes to the correct form component
- * for new providers (imagerouter, google_ai_studio).
- */
-
 import React from "react";
+import type { ModalCreationInterface } from "@opal/components";
 import { render, screen } from "@tests/setup/test-utils";
 import { getImageGenForm } from "@/views/admin/ImageGenerationPage/forms/getImageGenForm";
 import { ImageGenFormBaseProps } from "@/views/admin/ImageGenerationPage/forms/types";
 
-// ---------------------------------------------------------------------------
-// Mock all form components to identify which one renders
-// ---------------------------------------------------------------------------
+jest.mock("@/views/admin/ImageGenerationPage/forms/OpenAIImageGenForm", () => ({
+  OpenAIImageGenForm: () => <div data-testid="OpenAIImageGenForm" />,
+}));
 
-jest.mock(
-  "@/views/admin/ImageGenerationPage/forms/OpenAIImageGenForm",
-  () => ({
-    OpenAIImageGenForm: () => <div data-testid="OpenAIImageGenForm" />,
-  })
-);
+jest.mock("@/views/admin/ImageGenerationPage/forms/AzureImageGenForm", () => ({
+  AzureImageGenForm: () => <div data-testid="AzureImageGenForm" />,
+}));
 
-jest.mock(
-  "@/views/admin/ImageGenerationPage/forms/AzureImageGenForm",
-  () => ({
-    AzureImageGenForm: () => <div data-testid="AzureImageGenForm" />,
-  })
-);
+jest.mock("@/views/admin/ImageGenerationPage/forms/VertexImageGenForm", () => ({
+  VertexImageGenForm: () => <div data-testid="VertexImageGenForm" />,
+}));
 
-jest.mock(
-  "@/views/admin/ImageGenerationPage/forms/VertexImageGenForm",
-  () => ({
-    VertexImageGenForm: () => <div data-testid="VertexImageGenForm" />,
-  })
-);
-
-jest.mock(
-  "@/views/admin/ImageGenerationPage/forms/ImageRouterForm",
-  () => ({
-    ImageRouterForm: () => <div data-testid="ImageRouterForm" />,
-  })
-);
+jest.mock("@/views/admin/ImageGenerationPage/forms/ImageRouterForm", () => ({
+  ImageRouterForm: () => <div data-testid="ImageRouterForm" />,
+}));
 
 jest.mock(
   "@/views/admin/ImageGenerationPage/forms/GoogleAIStudioImageGenForm",
@@ -51,28 +29,26 @@ jest.mock(
   })
 );
 
-// ---------------------------------------------------------------------------
-// Helper
-// ---------------------------------------------------------------------------
+const mockModal: ModalCreationInterface = {
+  isOpen: true,
+  toggle: jest.fn(),
+  Provider: ({ children }) => <>{children}</>,
+};
 
 function makeProps(providerName: string): ImageGenFormBaseProps {
   return {
-    modal: { close: jest.fn(), open: jest.fn(), isOpen: true } as any,
+    modal: mockModal,
     imageProvider: {
       image_provider_id: "test_id",
       model_name: "test-model",
       provider_name: providerName,
       title: "Test Provider",
-      description: "Test description",
+      descriptionKey: "providers.openaiGptImage1.description",
     },
     existingProviders: [],
     onSuccess: jest.fn(),
   };
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("getImageGenForm", () => {
   test("routes imagerouter to ImageRouterForm", () => {
@@ -110,7 +86,7 @@ describe("getImageGenForm", () => {
   test("falls back to OpenAIImageGenForm for unknown provider", () => {
     const consoleSpy = jest
       .spyOn(console, "warn")
-      .mockImplementation(() => {});
+      .mockImplementation(() => undefined);
     const element = getImageGenForm(makeProps("unknown_provider"));
     render(<>{element}</>);
     expect(screen.getByTestId("OpenAIImageGenForm")).toBeInTheDocument();

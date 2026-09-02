@@ -1,7 +1,7 @@
 """Tests for the Claude Code CLI LLM provider.
 
 Covers:
-- invoke() command construction (permission flag, disallowed tools, stdin)
+- invoke() command construction (safe permissions, MCP allowlist, stdin)
 - invoke() JSON response parsing (text + thinking + usage)
 - stream() command construction (verbose, stream-json, partial messages)
 - stream() stream_event dispatch: thinking, text, tool_use (bridged + built-in)
@@ -9,28 +9,30 @@ Covers:
 - stream() assistant-snapshot dedup + tool routing
 - Bridge routing: WebSearch (bridged) yields delta.tool_calls; Bash (built-in)
   yields reasoning markdown
-- Disable-builtin-tools toggle on/off
+- Host-tool isolation
 """
 
 import json
 import subprocess
 from io import StringIO
-from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from onyx.llm.claude_code_cli import _CLAUDE_CODE_TOOL_BRIDGE
-from onyx.llm.claude_code_cli import _DISABLED_BUILTIN_TOOLS
-from onyx.llm.claude_code_cli import _format_builtin_tool_markdown
-from onyx.llm.claude_code_cli import _messages_to_prompt
-from onyx.llm.claude_code_cli import ClaudeCodeCLI
-from onyx.llm.model_response import ModelResponse
-from onyx.llm.model_response import ModelResponseStream
-from onyx.llm.models import AssistantMessage
-from onyx.llm.models import SystemMessage
-from onyx.llm.models import UserMessage
-
+from onyx.llm.claude_code_cli import (
+    _CLAUDE_CODE_TOOL_BRIDGE,
+    _ONYX_MCP_SERVER_TOOL_GROUP,
+    ClaudeCodeCLI,
+    _format_builtin_tool_markdown,
+    _messages_to_prompt,
+)
+from onyx.llm.model_response import ModelResponse, ModelResponseStream
+from onyx.llm.models import (
+    AssistantMessage,
+    ReasoningEffort,
+    SystemMessage,
+    UserMessage,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -66,15 +68,11 @@ def _stream_event(inner: dict) -> str:
     return json.dumps({"type": "stream_event", "event": inner})
 
 
-def _run_stream(
-    cli: ClaudeCodeCLI, events: list[str]
-) -> list[ModelResponseStream]:
+def _run_stream(cli: ClaudeCodeCLI, events: list[str]) -> list[ModelResponseStream]:
     """Drive cli.stream() against a canned sequence of JSONL events."""
     stdout = "\n".join(events) + ("\n" if events else "")
     proc = _make_proc(stdout)
-    with patch(
-        "onyx.llm.claude_code_cli.subprocess.Popen", return_value=proc
-    ):
+    with patch("onyx.llm.claude_code_cli.subprocess.Popen", return_value=proc):
         with patch(
             "onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config",
             return_value=None,
@@ -89,7 +87,7 @@ def _run_stream(
 
 @patch("onyx.llm.claude_code_cli.subprocess.run")
 @patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value=None)
-def test_invoke_command_uses_dangerously_skip_permissions(
+def test_invoke_command_isolates_host_tools_and_settings(
     _mock_mcp: MagicMock, mock_run: MagicMock
 ) -> None:
     mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
@@ -98,55 +96,114 @@ def test_invoke_command_uses_dangerously_skip_permissions(
     cli.invoke([UserMessage(content="hello")])
 
     cmd = mock_run.call_args[0][0]
-    assert "--dangerously-skip-permissions" in cmd
-
-
-@patch("onyx.llm.claude_code_cli.subprocess.run")
-@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value="/tmp/mcp.json")
-def test_invoke_command_disables_builtin_tools_when_mcp_available(
-    _mock_mcp: MagicMock, mock_run: MagicMock
-) -> None:
-    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
-    cli = _make_cli()
-
-    cli.invoke([UserMessage(content="hello")])
-
-    cmd = mock_run.call_args[0][0]
-    assert "--disallowedTools" in cmd
-    idx = cmd.index("--disallowedTools")
-    assert cmd[idx + 1] == _DISABLED_BUILTIN_TOOLS
+    assert "--dangerously-skip-permissions" not in cmd
+    assert cmd[cmd.index("--permission-mode") + 1] == "dontAsk"
+    assert cmd[cmd.index("--tools") + 1] == ""
+    assert cmd[cmd.index("--setting-sources") + 1] == ""
+    assert "--disable-slash-commands" in cmd
+    assert "--no-session-persistence" in cmd
 
 
 @patch("onyx.llm.claude_code_cli.subprocess.run")
 @patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value=None)
-def test_invoke_command_keeps_builtin_tools_when_no_mcp(
-    _mock_mcp: MagicMock, mock_run: MagicMock
-) -> None:
-    """When MCP is unavailable, built-in WebSearch/WebFetch must stay enabled
-    so the model still has web-search capability."""
-    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
-    cli = _make_cli()
-
-    cli.invoke([UserMessage(content="hello")])
-
-    cmd = mock_run.call_args[0][0]
-    assert "--disallowedTools" not in cmd
-
-
-@patch("onyx.llm.claude_code_cli.subprocess.run")
-@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value="/tmp/mcp.json")
-def test_invoke_command_disable_builtin_tools_toggle_off(
+def test_invoke_passes_resolved_reasoning_effort(
     _mock_mcp: MagicMock, mock_run: MagicMock
 ) -> None:
     mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
-    cli = _make_cli(
-        custom_config={"claude_code_disable_builtin_tools": "false"}
+    cli = ClaudeCodeCLI(
+        model_name="claude-opus-4-8",
+        api_key="test-key",
+        reasoning_effort_default=ReasoningEffort.MAX,
     )
 
     cli.invoke([UserMessage(content="hello")])
 
     cmd = mock_run.call_args[0][0]
-    assert "--disallowedTools" not in cmd
+    assert cmd[cmd.index("--effort") + 1] == "max"
+
+
+@patch("onyx.llm.claude_code_cli.subprocess.run")
+@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value=None)
+def test_invoke_passes_api_key_through_environment(
+    _mock_mcp: MagicMock, mock_run: MagicMock
+) -> None:
+    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+
+    _make_cli().invoke([UserMessage(content="hello")])
+
+    cmd = mock_run.call_args[0][0]
+    env = mock_run.call_args.kwargs["env"]
+    assert "--api-key" not in cmd
+    assert env["ANTHROPIC_API_KEY"] == "test-key"
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
+
+
+@patch("onyx.llm.claude_code_cli.subprocess.run")
+@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value=None)
+def test_invoke_passes_oauth_token_without_inherited_api_key(
+    _mock_mcp: MagicMock, mock_run: MagicMock
+) -> None:
+    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+    cli = _make_cli(custom_config={"auth_mode": "oauth", "oauth_token": "oauth-token"})
+
+    with patch.dict(
+        "onyx.llm.claude_code_cli.os.environ", {"ANTHROPIC_API_KEY": "leak"}
+    ):
+        cli.invoke([UserMessage(content="hello")])
+
+    env = mock_run.call_args.kwargs["env"]
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "oauth-token"
+    assert "ANTHROPIC_API_KEY" not in env
+
+
+@patch("onyx.llm.claude_code_cli.subprocess.run")
+@patch(
+    "onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config",
+    return_value="/tmp/mcp.json",
+)
+def test_invoke_command_strictly_allows_onyx_mcp_tools(
+    _mock_mcp: MagicMock, mock_run: MagicMock
+) -> None:
+    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+    cli = _make_cli()
+
+    cli.invoke([UserMessage(content="hello")])
+
+    cmd = mock_run.call_args[0][0]
+    assert "--strict-mcp-config" in cmd
+    assert cmd[cmd.index("--allowedTools") + 1] == _ONYX_MCP_SERVER_TOOL_GROUP
+
+
+@patch("onyx.llm.claude_code_cli.subprocess.run")
+@patch("onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config", return_value=None)
+def test_invoke_command_does_not_allow_mcp_tools_without_config(
+    _mock_mcp: MagicMock, mock_run: MagicMock
+) -> None:
+    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+    cli = _make_cli()
+
+    cli.invoke([UserMessage(content="hello")])
+
+    cmd = mock_run.call_args[0][0]
+    assert "--mcp-config" not in cmd
+    assert "--allowedTools" not in cmd
+
+
+@patch("onyx.llm.claude_code_cli.subprocess.run")
+@patch(
+    "onyx.llm.claude_code_cli.ClaudeCodeCLI._write_mcp_config",
+    return_value="/tmp/mcp.json",
+)
+def test_invoke_command_ignores_legacy_host_tool_toggle(
+    _mock_mcp: MagicMock, mock_run: MagicMock
+) -> None:
+    mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+    cli = _make_cli(custom_config={"claude_code_disable_builtin_tools": "false"})
+
+    cli.invoke([UserMessage(content="hello")])
+
+    cmd = mock_run.call_args[0][0]
+    assert cmd[cmd.index("--tools") + 1] == ""
 
 
 @patch("onyx.llm.claude_code_cli.subprocess.run")
@@ -236,9 +293,7 @@ def test_invoke_parses_json_text_and_thinking(
 def test_invoke_fallback_when_output_not_json(
     _mock_mcp: MagicMock, mock_run: MagicMock
 ) -> None:
-    mock_run.return_value = MagicMock(
-        returncode=0, stdout="not valid json", stderr=""
-    )
+    mock_run.return_value = MagicMock(returncode=0, stdout="not valid json", stderr="")
     cli = _make_cli()
 
     result = cli.invoke([UserMessage(content="hi")])
@@ -290,10 +345,12 @@ def test_stream_command_has_phase2_flags() -> None:
             list(_make_cli().stream([UserMessage(content="hi")]))
 
     cmd = mock_popen.call_args[0][0]
-    assert "--dangerously-skip-permissions" in cmd
+    assert "--dangerously-skip-permissions" not in cmd
+    assert cmd[cmd.index("--permission-mode") + 1] == "dontAsk"
     assert "--verbose" in cmd
     assert "--include-partial-messages" in cmd
-    assert "--disallowedTools" in cmd
+    assert "--strict-mcp-config" in cmd
+    assert cmd[cmd.index("--allowedTools") + 1] == _ONYX_MCP_SERVER_TOOL_GROUP
     idx = cmd.index("--output-format")
     assert cmd[idx + 1] == "stream-json"
     # Prompt is piped via stdin
@@ -301,11 +358,9 @@ def test_stream_command_has_phase2_flags() -> None:
     assert cmd[idx + 1] == "-"
 
 
-def test_stream_command_toggle_off_drops_disallowed_tools() -> None:
+def test_stream_command_without_mcp_keeps_host_tools_disabled() -> None:
     proc = _make_proc("")
-    cli = _make_cli(
-        custom_config={"claude_code_disable_builtin_tools": "false"}
-    )
+    cli = _make_cli(custom_config={"claude_code_disable_builtin_tools": "false"})
     with patch(
         "onyx.llm.claude_code_cli.subprocess.Popen", return_value=proc
     ) as mock_popen:
@@ -316,7 +371,8 @@ def test_stream_command_toggle_off_drops_disallowed_tools() -> None:
             list(cli.stream([UserMessage(content="hi")]))
 
     cmd = mock_popen.call_args[0][0]
-    assert "--disallowedTools" not in cmd
+    assert cmd[cmd.index("--tools") + 1] == ""
+    assert "--allowedTools" not in cmd
 
 
 # ---------------------------------------------------------------------------
@@ -441,9 +497,7 @@ def test_stream_bridged_tool_yields_tool_calls_not_reasoning() -> None:
     chunks = _run_stream(cli, events)
 
     # Bridged path: NO reasoning_content header, just one tool_calls delta.
-    reasoning = [
-        c for c in chunks if c.choice.delta.reasoning_content
-    ]
+    reasoning = [c for c in chunks if c.choice.delta.reasoning_content]
     assert reasoning == [], (
         "Bridged tool must NOT emit reasoning markdown -- it uses chip UI"
     )
@@ -490,8 +544,7 @@ def test_stream_builtin_tool_yields_reasoning_markdown() -> None:
 
     tool_calls = [c for c in chunks if c.choice.delta.tool_calls]
     assert tool_calls == [], (
-        "Non-bridged tool must NOT emit delta.tool_calls (would cause "
-        "double-execution)"
+        "Non-bridged tool must NOT emit delta.tool_calls (would cause double-execution)"
     )
 
     reasoning_chunks = [
@@ -667,7 +720,7 @@ def test_format_builtin_tool_markdown_uses_icon() -> None:
 
 
 def test_format_builtin_tool_markdown_unknown_tool() -> None:
-    md = _format_builtin_tool_markdown("SomethingExotic", '{}')
+    md = _format_builtin_tool_markdown("SomethingExotic", "{}")
     assert "🔧" in md
     assert "`SomethingExotic`" in md
 

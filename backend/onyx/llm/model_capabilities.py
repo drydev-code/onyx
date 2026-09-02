@@ -671,7 +671,7 @@ def supported_reasoning_efforts(
     derive their answer from `resolve_reasoning_param_style`, so a greyed-out
     slider stop and a dropped request parameter should never disagree.
     """
-    if model_provider == "openai_codex":
+    if model_provider == LlmProviderNames.OPENAI_CODEX:
         normalized_names = [name.lower() for name in model_names]
         efforts = [
             ReasoningEffort.LOW,
@@ -689,7 +689,7 @@ def supported_reasoning_efforts(
             efforts.append(ReasoningEffort.MAX)
         return efforts
 
-    if model_provider == "claude_code_cli":
+    if model_provider == LlmProviderNames.CLAUDE_CODE_CLI:
         return [
             ReasoningEffort.LOW,
             ReasoningEffort.MEDIUM,

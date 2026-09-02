@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { Text } from "@opal/components";
 import { SvgUsers } from "@opal/icons";
 
@@ -16,7 +17,6 @@ import MinimalMarkdown from "@/components/chat/MinimalMarkdown";
 
 interface AgentView {
   key: string;
-  threadId: string | null;
   prompt: string;
   status: string;
   message: string | null;
@@ -47,7 +47,6 @@ function buildAgentViews(packets: CollaborationPacket[]): AgentView[] {
       const current = agents.get(receiverId);
       agents.set(receiverId, {
         key: receiverId,
-        threadId: receiverId,
         prompt: current?.prompt || prompt,
         status: current?.status || event.status,
         message: current?.message ?? null,
@@ -58,7 +57,6 @@ function buildAgentViews(packets: CollaborationPacket[]): AgentView[] {
       const current = agents.get(receiverId);
       agents.set(receiverId, {
         key: receiverId,
-        threadId: receiverId,
         prompt: current?.prompt || promptByReceiverId.get(receiverId) || prompt,
         status: state.status,
         message: state.message ?? current?.message ?? null,
@@ -75,7 +73,6 @@ function buildAgentViews(packets: CollaborationPacket[]): AgentView[] {
       const key = `pending:${event.item_id}`;
       agents.set(key, {
         key,
-        threadId: null,
         prompt: event.prompt,
         status: event.status,
         message: null,
@@ -90,20 +87,24 @@ export const CollaborationRenderer: MessageRenderer<
   CollaborationPacket,
   FullChatState
 > = ({ packets, renderType, children }) => {
+  const t = useTranslations("chat.messages.timeline");
   const agents = useMemo(() => buildAgentViews(packets), [packets]);
   const completedCount = agents.filter((agent) =>
     isComplete(agent.status)
   ).length;
   const isCompact =
     renderType === RenderType.COMPACT || renderType === RenderType.HIGHLIGHT;
-  const header = `Delegated agents · ${completedCount}/${agents.length} complete`;
+  const header = t("collaboration.header", {
+    completed: completedCount,
+    total: agents.length,
+  });
 
   const content = isCompact ? (
     <div className="ps-[var(--timeline-common-text-padding)]">
       <Text as="p" font="main-ui-muted" color="text-03">
         {completedCount === agents.length && agents.length > 0
-          ? "Expand to view each agent output."
-          : "Agents are working in parallel."}
+          ? t("collaboration.completeHint")
+          : t("collaboration.working")}
       </Text>
     </div>
   ) : (
@@ -115,23 +116,17 @@ export const CollaborationRenderer: MessageRenderer<
         >
           <div className="flex items-center justify-between gap-3">
             <Text as="p" font="main-ui-action" color="text-02">
-              {`Agent ${index + 1}`}
+              {t("collaboration.agent", { index: index + 1 })}
             </Text>
             <Text as="p" font="secondary-body" color="text-04">
               {agent.status.replaceAll("_", " ")}
             </Text>
           </div>
 
-          {agent.threadId && (
-            <Text as="p" font="secondary-body" color="text-04">
-              {agent.threadId}
-            </Text>
-          )}
-
           {agent.prompt && (
             <div className="flex flex-col gap-1">
               <Text as="p" font="secondary-action" color="text-04">
-                Task
+                {t("collaboration.task")}
               </Text>
               <Text as="p" font="main-ui-body" color="text-02">
                 {agent.prompt}
@@ -141,7 +136,7 @@ export const CollaborationRenderer: MessageRenderer<
 
           <div className="flex flex-col gap-1">
             <Text as="p" font="secondary-action" color="text-04">
-              Output
+              {t("collaboration.output")}
             </Text>
             {agent.message ? (
               <MinimalMarkdown
@@ -150,7 +145,7 @@ export const CollaborationRenderer: MessageRenderer<
               />
             ) : (
               <Text as="p" font="main-ui-muted" color="text-03">
-                Waiting for this agent.
+                {t("collaboration.waiting")}
               </Text>
             )}
           </div>

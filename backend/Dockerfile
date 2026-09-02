@@ -64,6 +64,13 @@ ARG CLAUDE_CODE_CLI_VERSION=latest
 ARG CODEX_CLI_VERSION=latest
 ENV ENABLE_CLI_PROVIDERS=${ENABLE_CLI_PROVIDERS}
 
+# CLI providers are opt-in because Node.js and the provider binaries add
+# substantial size to the runtime image.
+ARG ENABLE_CLI_PROVIDERS=false
+ARG CLAUDE_CODE_CLI_VERSION=latest
+ARG CODEX_CLI_VERSION=latest
+ENV ENABLE_CLI_PROVIDERS=${ENABLE_CLI_PROVIDERS}
+
 LABEL com.danswer.maintainer="founders@onyx.app"
 LABEL com.danswer.description="This image is the web/frontend container of Onyx which \
 contains code for both the Community and Enterprise editions of Onyx. If you do not \
@@ -211,7 +218,7 @@ COPY --chown=onyx:onyx ./assets /app/assets
 ENV PYTHONPATH=/app
 
 # Default ONYX_VERSION, typically overriden during builds by GitHub Actions.
-ARG ONYX_VERSION="3.2.0 (drydev)"
+ARG ONYX_VERSION="4.2.0 (drydev)"
 ENV ONYX_VERSION=${ONYX_VERSION}
 
 # Use jemalloc instead of glibc malloc to reduce memory fragmentation

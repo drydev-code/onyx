@@ -4470,6 +4470,12 @@
         "loading": {
           "placeholder": "Carregando..."
         },
+        "modelName": {
+          "idle": "Insira qualquer nome de modelo compatível com o ImageRouter.",
+          "label": "Nome do modelo",
+          "placeholder": "Insira um nome de modelo compatível",
+          "required": "O nome do modelo é obrigatório"
+        },
         "location": {
           "idle": "A região do Google Cloud dos seus modelos Vertex AI. Consulte a <link>documentação do Google</link> para ver as regiões disponíveis.",
           "label": "Localização",
@@ -4519,6 +4525,18 @@
         },
         "gemini3ProImagePreview": {
           "description": "Descontinuado pelo Google Cloud em 17 de julho de 2026. Mude para o Gemini 3 Pro Image."
+        },
+        "googleAiStudioGemini25FlashImage": {
+          "description": "O Gemini 2.5 Flash Image via Google AI Studio foi projetado para gerar imagens com rapidez e eficiência."
+        },
+        "googleAiStudioGemini31FlashImage": {
+          "description": "O Nano Banana 2 via Google AI Studio combina a qualidade do Nano Banana Pro com a velocidade do Flash e resolução de até 4K."
+        },
+        "googleAiStudioGemini3ProImage": {
+          "description": "O Nano Banana Pro via Google AI Studio foi projetado para a produção profissional de ativos com melhor renderização de texto."
+        },
+        "imageRouter": {
+          "description": "Acesse os modelos de geração de imagens do ImageRouter com uma chave de API e especifique qualquer modelo compatível com sua API."
         },
         "openaiGptImage1": {
           "description": "Um modelo de geração de imagens competente da OpenAI, com forte aderência ao prompt."
@@ -5327,6 +5345,57 @@
           "validation": {
             "displayNameRequired": "O nome de exibição é obrigatório",
             "providerNameRequired": "O nome do provedor é obrigatório"
+          }
+        },
+        "codex": {
+          "authentication": {
+            "description": "Entre com sua conta do ChatGPT ou informe uma chave de API da OpenAI abaixo.",
+            "title": "Autenticação"
+          },
+          "authorized": {
+            "message": "Autenticação com o ChatGPT concluída com sucesso."
+          },
+          "errors": {
+            "expired": "O código do dispositivo expirou. Tente novamente.",
+            "missingAccessToken": "A resposta de autorização não incluiu um token de acesso.",
+            "pollFailed": "Não foi possível verificar o status da autorização.",
+            "startFailed": "Não foi possível iniciar a autorização do dispositivo.",
+            "unknown": "Ocorreu um erro de autorização desconhecido."
+          },
+          "pending": {
+            "codePrompt": "Digite este código:",
+            "instructions": "Abra a página de autorização em uma nova guia:",
+            "waiting": "Aguardando autorização..."
+          },
+          "signInButton": {
+            "label": "Entrar com o ChatGPT"
+          },
+          "tryAgainButton": {
+            "label": "Tentar novamente"
+          },
+          "validation": {
+            "authenticationRequired": "Entre com o ChatGPT ou informe uma chave de API da OpenAI."
+          }
+        },
+        "claudeCode": {
+          "cliPath": {
+            "title": "Caminho da CLI",
+            "description": "Caminho do executável da CLI do Claude Code. Deixe em branco para usar claude no PATH do servidor.",
+            "placeholder": "claude"
+          },
+          "authMode": {
+            "title": "Modo de autenticação",
+            "description": "Escolha como o Claude Code se autentica com a Anthropic.",
+            "apiKey": "Chave de API",
+            "oauth": "Token OAuth"
+          },
+          "oauthToken": {
+            "title": "Token OAuth",
+            "description": "Execute claude setup-token em uma máquina confiável e cole o token gerado.",
+            "placeholder": "Cole seu token OAuth"
+          },
+          "validation": {
+            "authenticationRequired": "Informe uma chave de API da Anthropic ou um token OAuth do Claude Code."
           }
         },
         "liteLlmProxy": {
@@ -9852,6 +9921,15 @@
           "writingCode": {
             "status": "Escrevendo código..."
           }
+        },
+        "collaboration": {
+          "agent": "Agente {index}",
+          "completeHint": "Expanda para ver o resultado de cada agente.",
+          "header": "Agentes delegados · {completed}/{total} concluídos",
+          "output": "Resultado",
+          "task": "Tarefa",
+          "waiting": "Aguardando este agente.",
+          "working": "Os agentes estão trabalhando em paralelo."
         },
         "reasoning": {
           "fullText": {

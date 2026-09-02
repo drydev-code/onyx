@@ -24,7 +24,9 @@ ARG CACHEBUST=0
 # predates this ENV (deploy-dev.sh passes both build args through).
 ARG ENABLE_CRAFT=false
 ARG ENABLE_CLI_PROVIDERS=false
+ARG ONYX_VERSION="4.2.0 (drydev)"
 ENV ENABLE_CLI_PROVIDERS=${ENABLE_CLI_PROVIDERS}
+ENV ONYX_VERSION=${ONYX_VERSION}
 
 # Only copy application code - deps are already in the base image
 COPY --chown=onyx:onyx ./onyx /app/onyx
@@ -34,4 +36,6 @@ COPY --chown=onyx:onyx ./alembic /app/alembic
 COPY --chown=onyx:onyx ./alembic_tenants /app/alembic_tenants
 COPY --chown=onyx:onyx ./alembic.ini /app/alembic.ini
 COPY --chown=onyx:onyx ./scripts /app/scripts
-RUN chmod +x /app/scripts/supervisord_entrypoint.sh /app/scripts/update_cli_providers.sh
+RUN chmod +x /app/scripts/docker_entrypoint.sh \
+        /app/scripts/supervisord_entrypoint.sh \
+        /app/scripts/update_cli_providers.sh

@@ -1,21 +1,10 @@
-/**
- * Integration Test: ImageRouterForm
- *
- * Tests that the ImageRouter image generation form renders the expected
- * fields: a model name input and an API key input.
- */
-
 import React from "react";
+import type { ModalCreationInterface } from "@opal/components";
 import { render, screen } from "@tests/setup/test-utils";
 import { ImageRouterForm } from "@/views/admin/ImageGenerationPage/forms/ImageRouterForm";
+import { ImageProvider } from "@/views/admin/ImageGenerationPage/constants";
 import { ImageGenFormBaseProps } from "@/views/admin/ImageGenerationPage/forms/types";
 
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
-
-// Mock the ProviderModal used by ImageGenFormWrapper so we do not need
-// the full modal portal / overlay infrastructure in tests.
 jest.mock("@/sections/modals/ProviderModal", () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => (
@@ -28,27 +17,6 @@ jest.mock("@/refresh-components/ConnectionProviderIcon", () => ({
   default: () => <span data-testid="connection-provider-icon" />,
 }));
 
-jest.mock("@/hooks/useToast", () => {
-  const toastFn = Object.assign(jest.fn(), {
-    success: jest.fn(),
-    error: jest.fn(),
-    info: jest.fn(),
-    warning: jest.fn(),
-    dismiss: jest.fn(),
-    clearAll: jest.fn(),
-    _markLeaving: jest.fn(),
-  });
-  return {
-    toast: toastFn,
-    useToast: () => ({
-      toast: toastFn,
-      dismiss: toastFn.dismiss,
-      clearAll: toastFn.clearAll,
-    }),
-  };
-});
-
-// Mock the image generation service calls
 jest.mock("@/views/admin/ImageGenerationPage/svc", () => ({
   testImageGenerationApiKey: jest.fn(),
   createImageGenerationConfig: jest.fn(),
@@ -56,23 +24,19 @@ jest.mock("@/views/admin/ImageGenerationPage/svc", () => ({
   fetchImageGenerationCredentials: jest.fn().mockResolvedValue(null),
 }));
 
-// ---------------------------------------------------------------------------
-// Test data
-// ---------------------------------------------------------------------------
-
-const mockImageProvider = {
+const mockImageProvider: ImageProvider = {
   image_provider_id: "imagerouter_custom",
   model_name: "",
   provider_name: "imagerouter",
   title: "ImageRouter",
-  description: "Access 80+ image generation models with one API key.",
+  descriptionKey: "providers.imageRouter.description",
 };
 
-const mockModal = {
-  close: jest.fn(),
-  open: jest.fn(),
+const mockModal: ModalCreationInterface = {
   isOpen: true,
-} as any;
+  toggle: jest.fn(),
+  Provider: ({ children }) => <>{children}</>,
+};
 
 function getBaseProps(): ImageGenFormBaseProps {
   return {
@@ -83,39 +47,33 @@ function getBaseProps(): ImageGenFormBaseProps {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe("ImageRouterForm", () => {
-  test("renders the Model Name field", () => {
+  test("renders the model name field", () => {
     render(<ImageRouterForm {...getBaseProps()} />);
 
     expect(screen.getByText("Model Name")).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText(
-        /flux-schnell/i
-      )
+      screen.getByPlaceholderText("Enter a supported model name")
     ).toBeInTheDocument();
   });
 
-  test("renders the API Key field", () => {
+  test("renders the API key field", () => {
     render(<ImageRouterForm {...getBaseProps()} />);
 
-    expect(screen.getByText("ImageRouter API Key")).toBeInTheDocument();
+    expect(screen.getByText("API Key")).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText(/enter your imagerouter api key/i)
+      screen.getByPlaceholderText("Enter your API key")
     ).toBeInTheDocument();
   });
 
-  test("shows idle help text for both fields", () => {
+  test("shows guidance for both fields", () => {
     render(<ImageRouterForm {...getBaseProps()} />);
 
     expect(
-      screen.getByText(/enter any model name supported by imagerouter/i)
+      screen.getByText("Enter any model name supported by ImageRouter.")
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/get your api key from imagerouter/i)
+      screen.getByText("Enter a new API key or select an existing provider.")
     ).toBeInTheDocument();
   });
 });

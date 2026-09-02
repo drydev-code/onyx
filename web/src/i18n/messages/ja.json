@@ -4470,6 +4470,12 @@
         "loading": {
           "placeholder": "読み込んでいます..."
         },
+        "modelName": {
+          "idle": "ImageRouter がサポートするモデル名を入力してください。",
+          "label": "モデル名",
+          "placeholder": "サポートされているモデル名を入力",
+          "required": "モデル名は必須です"
+        },
         "location": {
           "idle": "Vertex AI モデルを使用する Google Cloud リージョンです。利用できるリージョンは <link>Google のドキュメント</link> を参照してください。",
           "label": "リージョン",
@@ -4519,6 +4525,18 @@
         },
         "gemini3ProImagePreview": {
           "description": "Google Cloud により 2026 年 7 月 17 日に提供終了となります。Gemini 3 Pro Image に切り替えてください。"
+        },
+        "googleAiStudioGemini25FlashImage": {
+          "description": "Google AI Studio の Gemini 2.5 Flash Image は、高速で効率的な画像生成向けに設計されています。"
+        },
+        "googleAiStudioGemini31FlashImage": {
+          "description": "Google AI Studio の Nano Banana 2 は、Nano Banana Pro の品質と Flash の速度を兼ね備え、最大 4K の解像度に対応します。"
+        },
+        "googleAiStudioGemini3ProImage": {
+          "description": "Google AI Studio の Nano Banana Pro は、テキスト描画を改善したプロ向けのアセット制作を想定して設計されています。"
+        },
+        "imageRouter": {
+          "description": "1 つの API キーで ImageRouter の画像生成モデルにアクセスし、API がサポートする任意のモデルを指定できます。"
         },
         "openaiGptImage1": {
           "description": "プロンプトへの忠実度が高い、OpenAI の高性能な画像生成モデルです。"
@@ -5327,6 +5345,57 @@
           "validation": {
             "displayNameRequired": "表示名は必須です",
             "providerNameRequired": "プロバイダー名は必須です"
+          }
+        },
+        "codex": {
+          "authentication": {
+            "description": "ChatGPT アカウントでサインインするか、下に OpenAI API キーを入力してください。",
+            "title": "認証"
+          },
+          "authorized": {
+            "message": "ChatGPT での認証に成功しました。"
+          },
+          "errors": {
+            "expired": "デバイスコードの有効期限が切れました。もう一度お試しください。",
+            "missingAccessToken": "認証レスポンスにアクセストークンが含まれていません。",
+            "pollFailed": "認証ステータスを確認できませんでした。",
+            "startFailed": "デバイス認証を開始できませんでした。",
+            "unknown": "不明な認証エラーが発生しました。"
+          },
+          "pending": {
+            "codePrompt": "次のコードを入力してください：",
+            "instructions": "新しいタブで認証ページを開いてください：",
+            "waiting": "認証を待っています..."
+          },
+          "signInButton": {
+            "label": "ChatGPT でサインイン"
+          },
+          "tryAgainButton": {
+            "label": "もう一度試す"
+          },
+          "validation": {
+            "authenticationRequired": "ChatGPT でサインインするか、OpenAI API キーを入力してください。"
+          }
+        },
+        "claudeCode": {
+          "cliPath": {
+            "title": "CLI パス",
+            "description": "Claude Code CLI バイナリへのパスです。空欄の場合はサーバーの PATH にある claude を使用します。",
+            "placeholder": "claude"
+          },
+          "authMode": {
+            "title": "認証方法",
+            "description": "Claude Code が Anthropic に認証する方法を選択します。",
+            "apiKey": "API キー",
+            "oauth": "OAuth トークン"
+          },
+          "oauthToken": {
+            "title": "OAuth トークン",
+            "description": "信頼できるマシンで claude setup-token を実行し、生成されたトークンを貼り付けてください。",
+            "placeholder": "OAuth トークンを貼り付け"
+          },
+          "validation": {
+            "authenticationRequired": "Anthropic API キーまたは Claude Code OAuth トークンを入力してください。"
           }
         },
         "liteLlmProxy": {
@@ -9852,6 +9921,15 @@
           "writingCode": {
             "status": "コードを作成中..."
           }
+        },
+        "collaboration": {
+          "agent": "エージェント {index}",
+          "completeHint": "展開すると各エージェントの出力を表示できます。",
+          "header": "委任エージェント · {completed}/{total} 完了",
+          "output": "出力",
+          "task": "タスク",
+          "waiting": "このエージェントを待機しています。",
+          "working": "エージェントは並列で作業しています。"
         },
         "reasoning": {
           "fullText": {

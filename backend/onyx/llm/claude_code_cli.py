@@ -24,32 +24,35 @@ except ImportError:
     pwd = None  # type: ignore[assignment]
 
 from onyx.configs.model_configs import GEN_AI_TEMPERATURE
-from onyx.llm.cli_tool_bridge import CATEGORY_FETCH
-from onyx.llm.cli_tool_bridge import CATEGORY_FILE_READER
-from onyx.llm.cli_tool_bridge import CATEGORY_INTERNAL_SEARCH
-from onyx.llm.cli_tool_bridge import CATEGORY_INTERNET_SEARCH
-from onyx.llm.interfaces import LanguageModelInput
-from onyx.llm.interfaces import LLM
-from onyx.llm.interfaces import LLMConfig
-from onyx.llm.interfaces import LLMUserIdentity
-from onyx.llm.model_response import ChatCompletionDeltaToolCall
-from onyx.llm.model_response import Choice
-from onyx.llm.model_response import Delta
-from onyx.llm.model_response import FunctionCall
-from onyx.llm.model_response import Message
-from onyx.llm.model_response import ModelResponse
-from onyx.llm.model_response import ModelResponseStream
-from onyx.llm.model_response import StreamingChoice
-from onyx.llm.model_response import Usage
-from onyx.llm.models import ReasoningEffort
-from onyx.llm.models import ToolChoiceOptions
-from onyx.llm.well_known_providers.constants import CLAUDE_CODE_AUTH_MODE_KEY
-from onyx.llm.well_known_providers.constants import CLAUDE_CODE_CLI_PATH_KEY
-from onyx.llm.well_known_providers.constants import CLAUDE_CODE_CLI_PROVIDER_NAME
-from onyx.llm.well_known_providers.constants import (
-    CLAUDE_CODE_DISABLE_BUILTIN_TOOLS_KEY,
+from onyx.llm.cli_tool_bridge import (
+    CATEGORY_FETCH,
+    CATEGORY_FILE_READER,
+    CATEGORY_INTERNAL_SEARCH,
+    CATEGORY_INTERNET_SEARCH,
 )
-from onyx.llm.well_known_providers.constants import CLAUDE_CODE_OAUTH_TOKEN_KEY
+from onyx.llm.interfaces import LLM, LanguageModelInput, LLMConfig, LLMUserIdentity
+from onyx.llm.model_response import (
+    ChatCompletionDeltaToolCall,
+    Choice,
+    Delta,
+    FunctionCall,
+    Message,
+    ModelResponse,
+    ModelResponseStream,
+    StreamingChoice,
+    Usage,
+)
+from onyx.llm.models import (
+    ReasoningEffort,
+    ToolChoiceOptions,
+    resolve_reasoning_effort,
+)
+from onyx.llm.well_known_providers.constants import (
+    CLAUDE_CODE_AUTH_MODE_KEY,
+    CLAUDE_CODE_CLI_PATH_KEY,
+    CLAUDE_CODE_CLI_PROVIDER_NAME,
+    CLAUDE_CODE_OAUTH_TOKEN_KEY,
+)
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -57,15 +60,7 @@ logger = setup_logger()
 _DEFAULT_CLI_PATH = "claude"
 _DEFAULT_TIMEOUT = 300
 
-# Comma-separated list of Claude built-in tools to disable via
-# --disallowedTools when the disable-builtin-tools toggle is on (the
-# default). WebSearch and WebFetch are replaced by the Onyx MCP
-# server's own search/fetch tools (auto-injected by
-# mcp_config_builder.py), so disabling them avoids duplicate/divergent
-# results. The agentic tools (Read, Bash, Grep, Glob, Write, Edit, Task,
-# TodoWrite) stay enabled because Claude needs them to be useful and no
-# Onyx equivalent exists.
-_DISABLED_BUILTIN_TOOLS = "WebSearch,WebFetch"
+_ONYX_MCP_SERVER_TOOL_GROUP = "mcp__onyx"
 
 # Icon map for rendering built-in Claude tools inside the Thinking panel
 # as reasoning markdown. Bridged tools (Onyx MCP and Claude's own
@@ -123,11 +118,7 @@ def _format_builtin_tool_markdown(tool_name: str, args_json: str) -> str:
         pretty = json.dumps(parsed, indent=2)
     except (json.JSONDecodeError, TypeError):
         pass
-    return (
-        f"\n\n---\n\n"
-        f"### {icon} `{tool_name}`\n\n"
-        f"```json\n{pretty}\n```\n"
-    )
+    return f"\n\n---\n\n### {icon} `{tool_name}`\n\n```json\n{pretty}\n```\n"
 
 
 def _messages_to_prompt(prompt: LanguageModelInput) -> str:
@@ -214,8 +205,7 @@ class ClaudeCodeCLI(LLM):
         that breaks downstream JSON parsing, so we fail fast instead.
 
     reasoning_effort:
-        Silently ignored (no warning). This parameter is an advisory hint,
-        not a requirement. Dropping it has no functional impact.
+        Passed to the CLI with ``--effort`` after defaults and caps resolve.
 
     user_identity:
         Silently ignored (no warning). This is metadata used for logging
@@ -230,28 +220,28 @@ class ClaudeCodeCLI(LLM):
         custom_config: dict[str, str] | None = None,
         timeout: int | None = None,
         max_input_tokens: int = 200000,
+        reasoning_effort_default: ReasoningEffort | None = None,
+        reasoning_effort_user_default: ReasoningEffort | None = None,
+        reasoning_effort_max: ReasoningEffort | None = None,
     ):
         self._model_name = model_name
         self._api_key = api_key
-        self._temperature = temperature if temperature is not None else GEN_AI_TEMPERATURE
+        self._temperature = (
+            temperature if temperature is not None else GEN_AI_TEMPERATURE
+        )
         self._custom_config = custom_config or {}
         self._timeout = timeout or _DEFAULT_TIMEOUT
         self._max_input_tokens = max_input_tokens
-        self._cli_path = self._custom_config.get(CLAUDE_CODE_CLI_PATH_KEY, _DEFAULT_CLI_PATH)
-        self._auth_mode = self._custom_config.get(CLAUDE_CODE_AUTH_MODE_KEY, "api_key")
-        # Default ON: disable Claude's built-in WebSearch/WebFetch so the
-        # Onyx MCP server's own tools (injected via --mcp-config) handle
-        # web search/fetch instead. Admins can opt out by setting this
-        # key to "false" in the provider's custom_config.
-        self._disable_builtin_tools = (
-            self._custom_config.get(
-                CLAUDE_CODE_DISABLE_BUILTIN_TOOLS_KEY, "true"
-            ).lower()
-            != "false"
+        self._reasoning_effort_default = reasoning_effort_default
+        self._reasoning_effort_user_default = reasoning_effort_user_default
+        self._reasoning_effort_max = reasoning_effort_max
+        self._cli_path = self._custom_config.get(
+            CLAUDE_CODE_CLI_PATH_KEY, _DEFAULT_CLI_PATH
         )
+        self._auth_mode = self._custom_config.get(CLAUDE_CODE_AUTH_MODE_KEY, "api_key")
 
-    def _should_pass_api_key(self) -> bool:
-        """Return True if we should pass --api-key to the CLI."""
+    def _has_api_key(self) -> bool:
+        """Return whether this provider has a usable Anthropic API key."""
         if self._auth_mode == "oauth":
             return False
         # Pass api_key when it is set and not the placeholder value
@@ -261,12 +251,10 @@ class ClaudeCodeCLI(LLM):
         """Resolve the user we should drop privileges to before invoking
         the CLI, when this process is running as root.
 
-        Claude Code CLI refuses ``--dangerously-skip-permissions`` when
-        invoked as root for security reasons; in container deployments
-        the api_server runs as root but a non-root ``onyx`` user is
-        baked into the image. Returns ``(uid, gid, username, home)`` of
-        that user, or ``None`` if we are not root or the user does not
-        exist.
+        In container deployments the API server runs as root but a non-root
+        ``onyx`` user is baked into the image. Returns ``(uid, gid, username,
+        home)`` of that user, or ``None`` if we are not root or the user does
+        not exist.
         """
         try:
             if os.geteuid() != 0:
@@ -289,7 +277,7 @@ class ClaudeCodeCLI(LLM):
         uid, gid, _, _ = target
         return {"user": uid, "group": gid}
 
-    def _build_env(self) -> dict[str, str] | None:
+    def _build_env(self) -> dict[str, str]:
         """Build environment dict for subprocess calls.
 
         When OAuth mode is active and an oauth_token is stored in
@@ -301,21 +289,25 @@ class ClaudeCodeCLI(LLM):
         its credentials under that user's home directory instead of
         ``/root``.
 
-        Returns None when no environment modifications are needed
-        (subprocess inherits the parent environment by default).
+        The opposite authentication variable is removed so credentials from
+        the API server process cannot override this provider's configuration.
         """
-        env: dict[str, str] | None = None
+        env = os.environ.copy()
 
         oauth_token = self._custom_config.get(CLAUDE_CODE_OAUTH_TOKEN_KEY)
-        if self._auth_mode == "oauth" and oauth_token:
-            env = os.environ.copy()
-            env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
+        if self._auth_mode == "oauth":
+            env.pop("ANTHROPIC_API_KEY", None)
+            if oauth_token:
+                env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
+        else:
+            env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+            if self._has_api_key():
+                assert self._api_key is not None
+                env["ANTHROPIC_API_KEY"] = self._api_key
 
         target = self._drop_privileges_target()
         if target is not None:
             _, _, username, home = target
-            if env is None:
-                env = os.environ.copy()
             env["HOME"] = home
             env["USER"] = username
             env["LOGNAME"] = username
@@ -369,6 +361,55 @@ class ClaudeCodeCLI(LLM):
             raise
         return path
 
+    def _build_base_command(self) -> list[str]:
+        """Build the common non-interactive CLI command.
+
+        Claude runs as a text-generation provider inside the Onyx server, so
+        its host-level Bash and filesystem tools must never be available. The
+        empty setting sources also prevent a deployment-local CLAUDE.md or
+        settings file from changing provider behavior.
+        """
+        return [
+            self._cli_path,
+            "--print",
+            "--permission-mode",
+            "dontAsk",
+            "--tools",
+            "",
+            "--disable-slash-commands",
+            "--no-session-persistence",
+            "--setting-sources",
+            "",
+        ]
+
+    def _add_reasoning_effort(self, cmd: list[str], requested: ReasoningEffort) -> None:
+        effort = resolve_reasoning_effort(
+            requested,
+            default=self._reasoning_effort_default,
+            user_default=self._reasoning_effort_user_default,
+            maximum=self._reasoning_effort_max,
+        )
+        if effort in (ReasoningEffort.AUTO, ReasoningEffort.OFF):
+            return
+        if effort is ReasoningEffort.ULTRA:
+            effort = ReasoningEffort.MAX
+        cmd.extend(["--effort", effort.value])
+
+    @staticmethod
+    def _add_mcp_arguments(cmd: list[str], mcp_config_path: str | None) -> None:
+        """Add the isolated MCP config and allow only Onyx's read tools."""
+        if not mcp_config_path:
+            return
+        cmd.extend(
+            [
+                "--mcp-config",
+                mcp_config_path,
+                "--strict-mcp-config",
+                "--allowedTools",
+                _ONYX_MCP_SERVER_TOOL_GROUP,
+            ]
+        )
+
     @property
     def config(self) -> LLMConfig:
         return LLMConfig(
@@ -377,10 +418,13 @@ class ClaudeCodeCLI(LLM):
             temperature=self._temperature,
             custom_config=self._custom_config,
             max_input_tokens=self._max_input_tokens,
+            reasoning_effort_default=self._reasoning_effort_default,
+            reasoning_effort_user_default=self._reasoning_effort_user_default,
+            reasoning_effort_max=self._reasoning_effort_max,
             cli_tool_bridge=_CLAUDE_CODE_TOOL_BRIDGE or None,
         )
 
-    def invoke(
+    def invoke(  # noqa: C901
         self,
         prompt: LanguageModelInput,
         tools: list[dict] | None = None,
@@ -391,6 +435,7 @@ class ClaudeCodeCLI(LLM):
         reasoning_effort: ReasoningEffort = ReasoningEffort.AUTO,
         user_identity: LLMUserIdentity | None = None,
     ) -> ModelResponse:
+        _ = (tool_choice, max_tokens, user_identity)
         if tools:
             logger.warning(
                 "Claude Code CLI does not support tool calling. "
@@ -406,17 +451,18 @@ class ClaudeCodeCLI(LLM):
         text_prompt = _messages_to_prompt(prompt)
         timeout = timeout_override or self._timeout
 
-        cmd = [
-            self._cli_path,
-            "--print",
-            "--dangerously-skip-permissions",
-            "--output-format", "json",
-            "--model", self._model_name,
-            "-p", "-",  # read prompt from stdin
-        ]
-
-        if self._should_pass_api_key():
-            cmd.extend(["--api-key", self._api_key])  # type: ignore[arg-type]
+        cmd = self._build_base_command()
+        self._add_reasoning_effort(cmd, reasoning_effort)
+        cmd.extend(
+            [
+                "--output-format",
+                "json",
+                "--model",
+                self._model_name,
+                "-p",
+                "-",  # read prompt from stdin
+            ]
+        )
 
         # NOTE: --max-tokens is NOT a valid Claude Code CLI flag — passing it
         # causes the CLI to exit immediately with code 1 ("unknown option").
@@ -424,15 +470,7 @@ class ClaudeCodeCLI(LLM):
         # should use a LiteLLM-based provider instead.
 
         mcp_config_path = self._write_mcp_config()
-        if mcp_config_path:
-            cmd.extend(["--mcp-config", mcp_config_path])
-
-        # Only disallow built-in WebSearch/WebFetch when the Onyx MCP server
-        # is actually available to provide replacements.  Without MCP tools
-        # the model would have no web-search capability at all, causing it
-        # to tell users "I don't have web search".
-        if self._disable_builtin_tools and mcp_config_path:
-            cmd.extend(["--disallowedTools", _DISABLED_BUILTIN_TOOLS])
+        self._add_mcp_arguments(cmd, mcp_config_path)
 
         env = self._build_env()
         priv_kwargs = self._subprocess_privilege_kwargs()
@@ -448,9 +486,7 @@ class ClaudeCodeCLI(LLM):
                 **priv_kwargs,
             )
         except subprocess.TimeoutExpired:
-            raise TimeoutError(
-                f"Claude Code CLI timed out after {timeout}s"
-            )
+            raise TimeoutError(f"Claude Code CLI timed out after {timeout}s")
         except FileNotFoundError:
             raise RuntimeError(
                 f"Claude Code CLI not found at '{self._cli_path}'. "
@@ -548,7 +584,7 @@ class ClaudeCodeCLI(LLM):
             usage=usage,
         )
 
-    def stream(
+    def stream(  # noqa: C901
         self,
         prompt: LanguageModelInput,
         tools: list[dict] | None = None,
@@ -559,6 +595,7 @@ class ClaudeCodeCLI(LLM):
         reasoning_effort: ReasoningEffort = ReasoningEffort.AUTO,
         user_identity: LLMUserIdentity | None = None,
     ) -> Iterator[ModelResponseStream]:
+        _ = (tool_choice, max_tokens, user_identity)
         if tools:
             logger.warning(
                 "Claude Code CLI does not support tool calling. "
@@ -576,19 +613,20 @@ class ClaudeCodeCLI(LLM):
         response_id = f"cli-{uuid.uuid4().hex[:12]}"
         created = str(int(time.time()))
 
-        cmd = [
-            self._cli_path,
-            "--print",
-            "--dangerously-skip-permissions",
-            "--verbose",
-            "--output-format", "stream-json",
-            "--include-partial-messages",
-            "--model", self._model_name,
-            "-p", "-",  # read prompt from stdin
-        ]
-
-        if self._should_pass_api_key():
-            cmd.extend(["--api-key", self._api_key])  # type: ignore[arg-type]
+        cmd = self._build_base_command()
+        self._add_reasoning_effort(cmd, reasoning_effort)
+        cmd.extend(
+            [
+                "--verbose",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--model",
+                self._model_name,
+                "-p",
+                "-",  # read prompt from stdin
+            ]
+        )
 
         # NOTE: --max-tokens is NOT a valid Claude Code CLI flag — passing it
         # causes the CLI to exit immediately with code 1 ("unknown option").
@@ -598,15 +636,7 @@ class ClaudeCodeCLI(LLM):
         # should use a LiteLLM-based provider instead.
 
         mcp_config_path = self._write_mcp_config()
-        if mcp_config_path:
-            cmd.extend(["--mcp-config", mcp_config_path])
-
-        # Only disallow built-in WebSearch/WebFetch when the Onyx MCP server
-        # is actually available to provide replacements.  Without MCP tools
-        # the model would have no web-search capability at all, causing it
-        # to tell users "I don't have web search".
-        if self._disable_builtin_tools and mcp_config_path:
-            cmd.extend(["--disallowedTools", _DISABLED_BUILTIN_TOOLS])
+        self._add_mcp_arguments(cmd, mcp_config_path)
 
         env = self._build_env()
         priv_kwargs = self._subprocess_privilege_kwargs()
@@ -707,11 +737,15 @@ class ClaudeCodeCLI(LLM):
                 event_type = event.get("type", "")
                 event_count += 1
                 if event_count <= 5 or event_type not in (
-                    "content_block_delta", "ping", "stream_event",
+                    "content_block_delta",
+                    "ping",
+                    "stream_event",
                 ):
                     logger.info(
                         "CLI stream event #%d: type=%s keys=%s",
-                        event_count, event_type, list(event.keys()),
+                        event_count,
+                        event_type,
+                        list(event.keys()),
                     )
 
                 # ─── stream_event: nested SSE deltas (PRIMARY stream path) ──
@@ -777,9 +811,7 @@ class ClaudeCodeCLI(LLM):
                             if thinking:
                                 if current_message_id:
                                     msg_thinking_len[current_message_id] = (
-                                        msg_thinking_len.get(
-                                            current_message_id, 0
-                                        )
+                                        msg_thinking_len.get(current_message_id, 0)
                                         + len(thinking)
                                     )
                                 yield ModelResponseStream(
@@ -796,12 +828,9 @@ class ClaudeCodeCLI(LLM):
                             text = delta_data.get("text", "")
                             if text:
                                 if current_message_id:
-                                    msg_text_len[current_message_id] = (
-                                        msg_text_len.get(
-                                            current_message_id, 0
-                                        )
-                                        + len(text)
-                                    )
+                                    msg_text_len[current_message_id] = msg_text_len.get(
+                                        current_message_id, 0
+                                    ) + len(text)
                                 yield ModelResponseStream(
                                     id=response_id,
                                     created=created,
@@ -844,8 +873,7 @@ class ClaudeCodeCLI(LLM):
                                                     function=FunctionCall(
                                                         name=tu["name"],
                                                         arguments=(
-                                                            tu["args_buf"]
-                                                            or "{}"
+                                                            tu["args_buf"] or "{}"
                                                         ),
                                                     ),
                                                 )
@@ -876,9 +904,7 @@ class ClaudeCodeCLI(LLM):
                         if usage_data:
                             final_usage = Usage(
                                 prompt_tokens=usage_data.get("input_tokens", 0),
-                                completion_tokens=usage_data.get(
-                                    "output_tokens", 0
-                                ),
+                                completion_tokens=usage_data.get("output_tokens", 0),
                                 total_tokens=(
                                     usage_data.get("input_tokens", 0)
                                     + usage_data.get("output_tokens", 0)
@@ -980,9 +1006,7 @@ class ClaudeCodeCLI(LLM):
                                                 type="function",
                                                 function=FunctionCall(
                                                     name=tu["name"],
-                                                    arguments=(
-                                                        tu["args_buf"] or "{}"
-                                                    ),
+                                                    arguments=(tu["args_buf"] or "{}"),
                                                 ),
                                             )
                                         ],
@@ -1111,9 +1135,7 @@ class ClaudeCodeCLI(LLM):
                                 continue
                             snapshot_tool_ids_seen.add(tool_id)
                             tool_input = block.get("input") or {}
-                            args_json = (
-                                json.dumps(tool_input) if tool_input else "{}"
-                            )
+                            args_json = json.dumps(tool_input) if tool_input else "{}"
                             if tool_name in _CLAUDE_CODE_TOOL_BRIDGE:
                                 yield ModelResponseStream(
                                     id=response_id,
@@ -1175,7 +1197,8 @@ class ClaudeCodeCLI(LLM):
             timer.cancel()
             logger.info(
                 "CLI stream ended: %d events processed, timed_out=%s",
-                event_count, timed_out.is_set(),
+                event_count,
+                timed_out.is_set(),
             )
             try:
                 proc.wait(timeout=5)
