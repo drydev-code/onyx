@@ -16,6 +16,7 @@ DEFAULT_FEATURE_BRANCHES=(
     "feature/google-ai-studio-image"
     "feature/imagerouter"
     "feature/codex"
+    "feature/codex-collaboration-rendering"
     "feature/claude-code"
     "feature/branding"
 )
@@ -53,8 +54,9 @@ Default feature merge order:
   3. feature/google-ai-studio-image
   4. feature/imagerouter
   5. feature/codex
-  6. feature/claude-code
-  7. feature/branding
+  6. feature/codex-collaboration-rendering
+  7. feature/claude-code
+  8. feature/branding
 EOF
 }
 
