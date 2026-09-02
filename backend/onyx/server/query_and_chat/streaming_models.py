@@ -40,6 +40,7 @@ class StreamingType(Enum):
     REASONING_START = "reasoning_start"
     REASONING_DELTA = "reasoning_delta"
     REASONING_DONE = "reasoning_done"
+    COLLABORATION_EVENT = "collaboration_event"
     CITATION_INFO = "citation_info"
     TOOL_CALL_DEBUG = "tool_call_debug"
     TOOL_CALL_ARGUMENT_DELTA = "tool_call_argument_delta"
@@ -112,6 +113,24 @@ class ReasoningDelta(BaseObj):
 
 class ReasoningDone(BaseObj):
     type: Literal["reasoning_done"] = StreamingType.REASONING_DONE.value
+
+
+class CollaborationAgentState(BaseModel):
+    status: str
+    message: str | None = None
+
+
+class CollaborationEvent(BaseObj):
+    type: Literal["collaboration_event"] = StreamingType.COLLABORATION_EVENT.value
+
+    item_id: str
+    phase: Literal["started", "completed"]
+    tool: str
+    sender_thread_id: str | None = None
+    receiver_thread_ids: list[str] = Field(default_factory=list)
+    prompt: str | None = None
+    agents_states: dict[str, CollaborationAgentState] = Field(default_factory=dict)
+    status: str
 
 
 ################################################
@@ -448,6 +467,7 @@ PacketObj = Union[
     ReasoningStart,
     ReasoningDelta,
     ReasoningDone,
+    CollaborationEvent,
     # Citation Packets
     CitationInfo,
     ToolCallDebug,

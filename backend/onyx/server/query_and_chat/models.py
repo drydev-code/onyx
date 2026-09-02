@@ -219,6 +219,7 @@ class ChatMessageDetail(BaseModel):
     latest_child_message: int | None = None
     message: str
     reasoning_tokens: str | None = None
+    collaboration_events: list[dict[str, Any]] | None = None
     message_type: MessageType
     context_docs: list[SavedSearchDoc] | None = None
     # Dict mapping citation number to document_id
@@ -235,7 +236,9 @@ class ChatMessageDetail(BaseModel):
         self, *args: list, **kwargs: dict[str, Any]
     ) -> dict[str, Any]:
         initial_dict = super().model_dump(
-            mode="json", *args, **kwargs  # ty: ignore[invalid-argument-type]
+            mode="json",
+            *args,
+            **kwargs,  # ty: ignore[invalid-argument-type]
         )
         initial_dict["time_sent"] = self.time_sent.isoformat()
         return initial_dict

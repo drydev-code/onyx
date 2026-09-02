@@ -1,6 +1,7 @@
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -49,6 +50,8 @@ class ChatStateContainer:
         self.reasoning_tokens: str | None = None
         # This is accumulated during the streaming of the answer
         self.answer_tokens: str | None = None
+        # Provider-native delegation events, such as Codex sub-agent results.
+        self.collaboration_events: list[dict[str, Any]] = []
         # Store citation mapping for building citation_docs_info during partial saves
         self.citation_to_doc: CitationMapping = {}
         # True if this turn is a clarification question (deep research flow)
@@ -76,6 +79,11 @@ class ChatStateContainer:
         with self._lock:
             self.answer_tokens = answer
 
+    def add_collaboration_event(self, event: dict[str, Any]) -> None:
+        """Add a provider-native collaboration event."""
+        with self._lock:
+            self.collaboration_events.append(event)
+
     def set_citation_mapping(self, citation_to_doc: CitationMapping) -> None:
         """Set the citation mapping from citation processor."""
         with self._lock:
@@ -95,6 +103,11 @@ class ChatStateContainer:
         """Thread-safe getter for reasoning_tokens."""
         with self._lock:
             return self.reasoning_tokens
+
+    def get_collaboration_events(self) -> list[dict[str, Any]]:
+        """Return a copy of the provider-native collaboration events."""
+        with self._lock:
+            return [event.copy() for event in self.collaboration_events]
 
     def get_tool_calls(self) -> list[ToolCallInfo]:
         """Thread-safe getter for tool_calls (returns a copy)."""

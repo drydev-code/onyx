@@ -24,6 +24,7 @@ export function isToolPacket(
     PacketType.FILE_READER_RESULT,
     PacketType.REASONING_START,
     PacketType.REASONING_DELTA,
+    PacketType.COLLABORATION_EVENT,
     PacketType.FETCH_TOOL_START,
     PacketType.FETCH_TOOL_URLS,
     PacketType.FETCH_TOOL_DOCUMENTS,

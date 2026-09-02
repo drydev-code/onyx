@@ -19,6 +19,7 @@ from onyx.natural_language_processing.utils import get_tokenizer
 from onyx.server.query_and_chat.chat_utils import mime_type_to_chat_file_type
 from onyx.tools.models import ToolCallInfo
 from onyx.utils.logger import setup_logger
+from onyx.utils.postgres_sanitization import sanitize_json_like
 from onyx.utils.postgres_sanitization import sanitize_string
 
 logger = setup_logger()
@@ -177,6 +178,7 @@ def save_chat_turn(
     is_clarification: bool = False,
     emitted_citations: set[int] | None = None,
     pre_answer_processing_time: float | None = None,
+    collaboration_events: list[dict[str, object]] | None = None,
 ) -> None:
     """
     Save a chat turn by populating the assistant_message and creating related entities.
@@ -210,6 +212,9 @@ def save_chat_turn(
     assistant_message.message = sanitized_message_text
     assistant_message.reasoning_tokens = (
         sanitize_string(reasoning_tokens) if reasoning_tokens else reasoning_tokens
+    )
+    assistant_message.collaboration_events = (
+        sanitize_json_like(collaboration_events) if collaboration_events else None
     )
     assistant_message.is_clarification = is_clarification
 

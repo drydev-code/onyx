@@ -2866,6 +2866,9 @@ class ChatMessage(Base):
 
     # What does this message contain
     reasoning_tokens: Mapped[str | None] = mapped_column(Text, nullable=True)
+    collaboration_events: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        postgresql.JSONB(), nullable=True
+    )
     message: Mapped[str] = mapped_column(Text)
     token_count: Mapped[int] = mapped_column(Integer)
     message_type: Mapped[MessageType] = mapped_column(

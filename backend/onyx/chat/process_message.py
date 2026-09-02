@@ -1490,9 +1490,9 @@ def _stream_chat_turn(
         if new_msg_req.mock_llm_response is not None:
             mock_response_token = set_llm_mock_response(new_msg_req.mock_llm_response)
 
-        assert (
-            setup is not None
-        ), "build_chat_turn must complete before _run_models is called"
+        assert setup is not None, (
+            "build_chat_turn must complete before _run_models is called"
+        )
         yield from _run_models(
             setup=setup,
             user=user,
@@ -1681,6 +1681,7 @@ def llm_loop_completion_handle(
     # direct attribute access is not thread-safe — use the provided getters.
     answer_tokens = state_container.get_answer_tokens()
     reasoning_tokens = state_container.get_reasoning_tokens()
+    collaboration_events = state_container.get_collaboration_events()
     citation_to_doc = state_container.get_citation_to_doc()
     tool_calls = state_container.get_tool_calls()
     is_clarification = state_container.get_is_clarification()
@@ -1721,6 +1722,7 @@ def llm_loop_completion_handle(
         save_chat_turn(
             message_text=final_answer,
             reasoning_tokens=reasoning_tokens,
+            collaboration_events=collaboration_events,
             citation_to_doc=citation_to_doc,
             tool_calls=tool_calls,
             all_search_docs=all_search_docs,

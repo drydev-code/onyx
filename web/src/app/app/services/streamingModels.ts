@@ -47,6 +47,7 @@ export enum PacketType {
   REASONING_START = "reasoning_start",
   REASONING_DELTA = "reasoning_delta",
   REASONING_DONE = "reasoning_done",
+  COLLABORATION_EVENT = "collaboration_event",
 
   // Citation packets
   CITATION_START = "citation_start",
@@ -262,6 +263,23 @@ export interface ReasoningDone extends BaseObj {
   type: "reasoning_done";
 }
 
+export interface CollaborationAgentState {
+  status: string;
+  message?: string | null;
+}
+
+export interface CollaborationEvent extends BaseObj {
+  type: "collaboration_event";
+  item_id: string;
+  phase: "started" | "completed";
+  tool: string;
+  sender_thread_id?: string | null;
+  receiver_thread_ids: string[];
+  prompt?: string | null;
+  agents_states: Record<string, CollaborationAgentState>;
+  status: string;
+}
+
 // Citation Packets
 export interface StreamingCitation {
   citation_num: number;
@@ -406,6 +424,11 @@ export type ReasoningObj =
   | SectionEnd
   | PacketError;
 
+export type CollaborationObj =
+  | CollaborationEvent
+  | SectionEnd
+  | PacketError;
+
 export type CitationObj =
   | CitationStart
   | CitationInfo
@@ -438,6 +461,7 @@ export type ObjTypes =
   | ChatObj
   | NewToolObj
   | ReasoningObj
+  | CollaborationObj
   | StopObj
   | SectionEndObj
   | TopLevelBranchingObj
@@ -515,6 +539,11 @@ export interface MemoryToolPacket {
 export interface ReasoningPacket {
   placement: Placement;
   obj: ReasoningObj;
+}
+
+export interface CollaborationPacket {
+  placement: Placement;
+  obj: CollaborationObj;
 }
 
 export interface SectionEndPacket {

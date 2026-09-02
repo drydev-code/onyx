@@ -29,7 +29,6 @@ from onyx.llm.codex_cli import CodexCLI
 from onyx.llm.model_response import ModelResponseStream
 from onyx.llm.models import UserMessage
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -53,13 +52,9 @@ def _make_proc(stdout_text: str) -> MagicMock:
     return proc
 
 
-def _run_stream(
-    cli: CodexCLI, events: list[dict]
-) -> list[ModelResponseStream]:
+def _run_stream(cli: CodexCLI, events: list[dict]) -> list[ModelResponseStream]:
     """Drive cli.stream() against a canned sequence of JSONL events."""
-    stdout = "\n".join(json.dumps(e) for e in events) + (
-        "\n" if events else ""
-    )
+    stdout = "\n".join(json.dumps(e) for e in events) + ("\n" if events else "")
     proc = _make_proc(stdout)
     with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc):
         with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
@@ -73,9 +68,7 @@ def _run_stream(
 
 def test_stream_command_uses_json_flag() -> None:
     proc = _make_proc("")
-    with patch(
-        "onyx.llm.codex_cli.subprocess.Popen", return_value=proc
-    ) as mock_popen:
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
         with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
             list(_make_cli().stream([UserMessage(content="hi")]))
 
@@ -89,9 +82,7 @@ def test_stream_command_uses_json_flag() -> None:
 
 def test_stream_command_disables_web_search_by_default() -> None:
     proc = _make_proc("")
-    with patch(
-        "onyx.llm.codex_cli.subprocess.Popen", return_value=proc
-    ) as mock_popen:
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
         with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
             list(_make_cli().stream([UserMessage(content="hi")]))
 
@@ -103,12 +94,8 @@ def test_stream_command_disables_web_search_by_default() -> None:
 
 def test_stream_command_toggle_off_keeps_web_search() -> None:
     proc = _make_proc("")
-    cli = _make_cli(
-        custom_config={"openai_codex_disable_builtin_tools": "false"}
-    )
-    with patch(
-        "onyx.llm.codex_cli.subprocess.Popen", return_value=proc
-    ) as mock_popen:
+    cli = _make_cli(custom_config={"openai_codex_disable_builtin_tools": "false"})
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
         with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
             list(cli.stream([UserMessage(content="hi")]))
 
@@ -118,18 +105,14 @@ def test_stream_command_toggle_off_keeps_web_search() -> None:
 
 def test_stream_command_includes_instructions() -> None:
     proc = _make_proc("")
-    with patch(
-        "onyx.llm.codex_cli.subprocess.Popen", return_value=proc
-    ) as mock_popen:
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc) as mock_popen:
         with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
             list(_make_cli().stream([UserMessage(content="hi")]))
 
     cmd = mock_popen.call_args[0][0]
     # There should be a -c instructions="..." somewhere
     c_indices = [i for i, v in enumerate(cmd) if v == "-c"]
-    instructions_found = any(
-        cmd[i + 1].startswith("instructions=") for i in c_indices
-    )
+    instructions_found = any(cmd[i + 1].startswith("instructions=") for i in c_indices)
     assert instructions_found
 
 
@@ -254,9 +237,7 @@ def test_stream_agent_message_yields_content() -> None:
         ],
     )
 
-    text_chunks = [
-        c.choice.delta.content for c in chunks if c.choice.delta.content
-    ]
+    text_chunks = [c.choice.delta.content for c in chunks if c.choice.delta.content]
     assert text_chunks == ["Hello there!"]
 
 
@@ -285,9 +266,7 @@ def test_stream_alternative_answer_item_types_yield_content(
         ],
     )
 
-    text_chunks = [
-        c.choice.delta.content for c in chunks if c.choice.delta.content
-    ]
+    text_chunks = [c.choice.delta.content for c in chunks if c.choice.delta.content]
     assert text_chunks == ["Final answer!"]
 
 
@@ -308,9 +287,7 @@ def test_stream_agent_message_with_content_field_yields_content() -> None:
         ],
     )
 
-    text_chunks = [
-        c.choice.delta.content for c in chunks if c.choice.delta.content
-    ]
+    text_chunks = [c.choice.delta.content for c in chunks if c.choice.delta.content]
     assert text_chunks == ["Hello from content field"]
 
 
@@ -459,9 +436,7 @@ def test_detect_codex_auth_failure_recognizes_known_markers() -> None:
     assert _detect_codex_auth_failure(
         "HTTP error: 401 Unauthorized, url: wss://chatgpt.com/..."
     )
-    assert _detect_codex_auth_failure(
-        "ERROR codex_login::auth::manager: ..."
-    )
+    assert _detect_codex_auth_failure("ERROR codex_login::auth::manager: ...")
     assert _detect_codex_auth_failure("invalid_grant")
     assert not _detect_codex_auth_failure("model is overloaded")
     assert not _detect_codex_auth_failure("")
@@ -599,6 +574,66 @@ def test_stream_unknown_item_type_yields_generic_marker() -> None:
     joined = "".join(reasoning)
     assert "mystery_item" in joined
     assert "foo" in joined
+
+
+def test_stream_collaboration_items_yield_structured_events() -> None:
+    cli = _make_cli()
+    receiver_id = "child-thread-1"
+    chunks = _run_stream(
+        cli,
+        [
+            {
+                "type": "item.started",
+                "item": {
+                    "id": "item_0",
+                    "type": "collab_tool_call",
+                    "tool": "spawn_agent",
+                    "sender_thread_id": "parent-thread",
+                    "receiver_thread_ids": [],
+                    "prompt": "Research one topic.",
+                    "agents_states": {},
+                    "status": "in_progress",
+                },
+            },
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "item_1",
+                    "type": "collab_tool_call",
+                    "tool": "wait",
+                    "sender_thread_id": "parent-thread",
+                    "receiver_thread_ids": [receiver_id],
+                    "prompt": None,
+                    "agents_states": {
+                        receiver_id: {
+                            "status": "completed",
+                            "message": "The agent report.",
+                        }
+                    },
+                    "status": "completed",
+                },
+            },
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "item_2",
+                    "type": "agent_message",
+                    "text": "Final answer.",
+                },
+            },
+        ],
+    )
+
+    events = [
+        event for chunk in chunks for event in chunk.choice.delta.collaboration_events
+    ]
+    reasoning = "".join(chunk.choice.delta.reasoning_content or "" for chunk in chunks)
+
+    assert len(events) == 2
+    assert events[0].tool == "spawn_agent"
+    assert events[0].prompt == "Research one topic."
+    assert events[1].agents_states[receiver_id].message == "The agent report."
+    assert "collab_tool_call" not in reasoning
 
 
 def test_stream_long_output_gets_truncated() -> None:
