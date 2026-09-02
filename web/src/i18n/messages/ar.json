@@ -4470,6 +4470,12 @@
         "loading": {
           "placeholder": "جارٍ التحميل..."
         },
+        "modelName": {
+          "idle": "أدخل اسم أي نموذج يدعمه ImageRouter.",
+          "label": "اسم النموذج",
+          "placeholder": "أدخل اسم نموذج مدعوم",
+          "required": "اسم النموذج مطلوب"
+        },
         "location": {
           "idle": "منطقة Google Cloud لنماذج Vertex AI الخاصة بك. راجع <link>وثائق Google</link> للمناطق المتاحة.",
           "label": "الموقع",
@@ -4519,6 +4525,18 @@
         },
         "gemini3ProImagePreview": {
           "description": "أوقفته Google Cloud في 17 يوليو 2026. انتقل إلى Gemini 3 Pro Image."
+        },
+        "googleAiStudioGemini25FlashImage": {
+          "description": "صُمم Gemini 2.5 Flash Image عبر Google AI Studio لتوليد الصور بسرعة وكفاءة."
+        },
+        "googleAiStudioGemini31FlashImage": {
+          "description": "يجمع Nano Banana 2 عبر Google AI Studio بين جودة Nano Banana Pro وسرعة Flash، ويدعم دقة تصل إلى 4K."
+        },
+        "googleAiStudioGemini3ProImage": {
+          "description": "صُمم Nano Banana Pro عبر Google AI Studio لإنتاج الأصول الاحترافية مع عرض نص محسّن."
+        },
+        "imageRouter": {
+          "description": "استخدم نماذج توليد الصور من ImageRouter بمفتاح API واحد، وحدد أي نموذج تدعمه واجهة API الخاصة به."
         },
         "openaiGptImage1": {
           "description": "نموذج توليد صور قدير من OpenAI بالتزام قوي بالمطالبات."
@@ -5114,7 +5132,95 @@
           "title": "مستضاف ذاتيًا ومخصص"
         }
       },
+      "virtualProfiles": {
+        "addButton": "إضافة ملف تعريف",
+        "defaultTag": "افتراضي",
+        "deleteAria": "حذف {name}",
+        "deleteModal": {
+          "description": "لن يتمكن المستخدمون بعد الآن من تحديد ملف التعريف هذا.",
+          "submit": "حذف",
+          "title": "حذف {name}"
+        },
+        "disabledDescription": "يحدد المستخدمون نماذج الموفّرين مباشرةً. أضف ملفات تعريف، ثم فعّل ملفات التعريف المُدارة.",
+        "editAria": "تعديل {name}",
+        "emptyDescription": "أضف اسمًا بسيطًا واربطه بنموذج موفّر مهيأ.",
+        "enabledDescription": "يرى جميع المستخدمين أسماء ملفات التعريف هذه فقط. يحدد Onyx الهدف الحالي لكل ملف تعريف.",
+        "form": {
+          "createTitle": "إضافة ملف تعريف للنموذج",
+          "editTitle": "تعديل ملف تعريف النموذج",
+          "nameLabel": "اسم ملف التعريف",
+          "namePlaceholder": "الوكيل العادي",
+          "saveButton": "حفظ",
+          "targetLabel": "التوجيه إلى"
+        },
+        "listTitle": "ملفات تعريف النماذج",
+        "routesTo": "التوجيه إلى {provider} · {model}",
+        "setDefaultButton": "تعيين كافتراضي",
+        "title": "ملفات تعريف النماذج المُدارة",
+        "toasts": {
+          "defaultFailed": "فشل تحديث ملف التعريف الافتراضي.",
+          "defaultUpdated": "تم تحديث ملف التعريف الافتراضي.",
+          "deleteFailed": "فشل حذف ملف التعريف.",
+          "deleted": "تم حذف ملف تعريف النموذج.",
+          "disabled": "تم تعطيل ملفات تعريف النماذج المُدارة.",
+          "enabled": "تم تفعيل ملفات تعريف النماذج المُدارة.",
+          "saveFailed": "فشل حفظ ملف التعريف.",
+          "saved": "تم حفظ ملف تعريف النموذج.",
+          "toggleFailed": "فشل تغيير حالة ملفات تعريف النماذج المُدارة."
+        }
+      },
       "modals": {
+        "codex": {
+          "authentication": {
+            "description": "سجّل الدخول بحساب ChatGPT، أو أدخل مفتاح OpenAI API أدناه.",
+            "title": "المصادقة"
+          },
+          "authorized": {
+            "message": "تمت المصادقة مع ChatGPT بنجاح."
+          },
+          "errors": {
+            "expired": "انتهت صلاحية رمز الجهاز. حاول مرة أخرى.",
+            "missingAccessToken": "لم تتضمن استجابة التفويض رمز وصول.",
+            "pollFailed": "فشل التحقق من حالة التفويض.",
+            "startFailed": "فشل بدء تفويض الجهاز.",
+            "unknown": "حدث خطأ تفويض غير معروف."
+          },
+          "pending": {
+            "codePrompt": "أدخل هذا الرمز:",
+            "instructions": "افتح صفحة التفويض في علامة تبويب جديدة:",
+            "waiting": "في انتظار التفويض..."
+          },
+          "signInButton": {
+            "label": "تسجيل الدخول باستخدام ChatGPT"
+          },
+          "tryAgainButton": {
+            "label": "حاول مرة أخرى"
+          },
+          "validation": {
+            "authenticationRequired": "سجّل الدخول باستخدام ChatGPT أو أدخل مفتاح OpenAI API."
+          }
+        },
+        "claudeCode": {
+          "cliPath": {
+            "title": "مسار CLI",
+            "description": "مسار ملف Claude Code CLI التنفيذي. اتركه فارغًا لاستخدام claude من مسار PATH للخادم.",
+            "placeholder": "claude"
+          },
+          "authMode": {
+            "title": "وضع المصادقة",
+            "description": "اختر طريقة مصادقة Claude Code مع Anthropic.",
+            "apiKey": "مفتاح API",
+            "oauth": "رمز OAuth"
+          },
+          "oauthToken": {
+            "title": "رمز OAuth",
+            "description": "شغّل claude setup-token على جهاز موثوق، ثم الصق الرمز الناتج.",
+            "placeholder": "الصق رمز OAuth"
+          },
+          "validation": {
+            "authenticationRequired": "أدخل مفتاح Anthropic API أو رمز Claude Code OAuth."
+          }
+        },
         "access": {
           "admin": {
             "sharedNote": "مشترك دائمًا",
@@ -10219,6 +10325,12 @@
         },
         "xhigh": {
           "label": "مرتفع جدًا"
+        },
+        "max": {
+          "label": "الحد الأقصى"
+        },
+        "ultra": {
+          "label": "فائق"
         }
       },
       "searchInput": {
