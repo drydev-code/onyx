@@ -14,6 +14,8 @@ Covers:
 """
 
 import json
+import time
+from collections.abc import Iterator
 from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -160,7 +162,37 @@ def test_stream_stages_pdf_and_passes_rendered_page_as_image() -> None:
     final_prompt = cmd[-1]
     assert image_path.endswith("scan.pdf-page-1.jpg")
     assert workspace_path in final_prompt
-    assert "visual OCR" in final_prompt
+    assert "read the rendered pages directly" in final_prompt
+
+
+def test_stream_timeout_tracks_idle_time_not_total_runtime() -> None:
+    events = [
+        {"type": "thread.started", "thread_id": "tid1"},
+        {"type": "turn.started"},
+        {
+            "type": "item.completed",
+            "item": {"id": "item1", "type": "agent_message", "text": "done"},
+        },
+        {"type": "turn.completed"},
+    ]
+
+    def _active_stdout() -> Iterator[str]:
+        for event in events:
+            time.sleep(0.35)
+            yield json.dumps(event) + "\n"
+
+    proc = _make_proc("")
+    proc.stdout = _active_stdout()
+    with patch("onyx.llm.codex_cli.subprocess.Popen", return_value=proc):
+        with patch("onyx.llm.codex_cli.CodexCLI._setup_auth", return_value=None):
+            chunks = list(
+                _make_cli().stream(
+                    [UserMessage(content="hi")],
+                    timeout_override=1,
+                )
+            )
+
+    assert any(chunk.choice.delta.content == "done" for chunk in chunks)
 
 
 def test_stream_command_passes_resolved_reasoning_effort() -> None:

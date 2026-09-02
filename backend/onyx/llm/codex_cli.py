@@ -732,17 +732,34 @@ class CodexCLI(LLM):
             )
 
         timed_out = threading.Event()
+        stream_finished = threading.Event()
+        activity_lock = threading.Lock()
+        last_activity = time.monotonic()
 
-        def _kill_on_timeout() -> None:
-            timed_out.set()
-            try:
-                proc.kill()
-            except OSError:
-                pass
+        def _mark_activity() -> None:
+            nonlocal last_activity
+            with activity_lock:
+                last_activity = time.monotonic()
 
-        timer = threading.Timer(timeout, _kill_on_timeout)
-        timer.daemon = True
-        timer.start()
+        def _kill_after_idle_timeout() -> None:
+            check_interval = min(1.0, max(0.05, timeout / 10))
+            while not stream_finished.wait(check_interval):
+                with activity_lock:
+                    idle_seconds = time.monotonic() - last_activity
+                if idle_seconds <= timeout:
+                    continue
+                timed_out.set()
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+                return
+
+        timeout_thread = threading.Thread(
+            target=_kill_after_idle_timeout,
+            daemon=True,
+        )
+        timeout_thread.start()
 
         # Drain stderr in a background thread so we can include its
         # contents in diagnostics even when the stream completes "cleanly"
@@ -754,7 +771,9 @@ class CodexCLI(LLM):
         def _drain_stderr() -> None:
             assert proc.stderr is not None
             try:
-                stderr_lines.extend(proc.stderr)
+                for line in proc.stderr:
+                    _mark_activity()
+                    stderr_lines.append(line)
             except Exception:  # noqa: BLE001 - stderr can be torn down on kill
                 pass
 
@@ -774,6 +793,7 @@ class CodexCLI(LLM):
         try:
             assert proc.stdout is not None
             for line in proc.stdout:
+                _mark_activity()
                 line = line.strip()
                 if not line:
                     continue
@@ -823,7 +843,7 @@ class CodexCLI(LLM):
                         error_messages.append(msg)
 
             if timed_out.is_set():
-                raise TimeoutError(f"Codex CLI streaming timed out after {timeout}s")
+                raise TimeoutError(f"Codex CLI was idle for more than {timeout}s")
 
             # If no agent_message-like item ever produced content, surface
             # something usable so the upstream LLM loop doesn't fail with
@@ -888,7 +908,8 @@ class CodexCLI(LLM):
             )
 
         finally:
-            timer.cancel()
+            stream_finished.set()
+            timeout_thread.join(timeout=2)
             logger.info(
                 "Codex CLI stream ended: %d events, timed_out=%s, observed=%s",
                 event_count,

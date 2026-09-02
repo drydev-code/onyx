@@ -196,7 +196,12 @@ def append_cli_file_instructions(
     lines.extend(
         [
             "Inspect these files before you say that their contents are unavailable.",
-            "For scanned PDFs, use the rendered pages for visual OCR.",
+            "For scanned PDFs, read the rendered pages directly with vision or the "
+            "available file reader.",
+            "Do not run Python or install PDF/OCR packages merely to inspect these "
+            "attachments.",
+            "If the task requires a new PDF, use the installed reportlab and Pillow "
+            "packages instead of probing or installing other PDF libraries.",
             "</attached-files>",
         ]
     )

@@ -46,7 +46,9 @@ def test_prepare_workspace_stages_pdf_and_rendered_page(tmp_path: Path) -> None:
     augmented_prompt = append_cli_file_instructions("Run OCR.", workspace)
     assert str(staged_path) in augmented_prompt
     assert "page 1 of 1" in augmented_prompt
-    assert "visual OCR" in augmented_prompt
+    assert "read the rendered pages directly" in augmented_prompt
+    assert "Do not run Python" in augmented_prompt
+    assert "reportlab and Pillow" in augmented_prompt
 
 
 def test_materialize_data_url_images_writes_supported_image(tmp_path: Path) -> None:
