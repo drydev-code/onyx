@@ -10,7 +10,9 @@ export type ReasoningEffortOverride =
   | "low"
   | "medium"
   | "high"
-  | "xhigh";
+  | "xhigh"
+  | "max"
+  | "ultra";
 
 export interface ModelConfiguration {
   id?: number;

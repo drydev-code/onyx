@@ -10206,6 +10206,12 @@
         },
         "xhigh": {
           "label": "XHigh"
+        },
+        "max": {
+          "label": "Max"
+        },
+        "ultra": {
+          "label": "Ultra"
         }
       },
       "searchInput": {

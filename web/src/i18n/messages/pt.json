@@ -10206,6 +10206,12 @@
         },
         "xhigh": {
           "label": "Muito alto"
+        },
+        "max": {
+          "label": "Máximo"
+        },
+        "ultra": {
+          "label": "Ultra"
         }
       },
       "searchInput": {

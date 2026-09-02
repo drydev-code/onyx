@@ -212,6 +212,53 @@ def test_supported_reasoning_efforts(
     assert (ReasoningEffort.XHIGH in efforts) is xhigh_supported
 
 
+@pytest.mark.parametrize(
+    "provider, model_name, expected",
+    [
+        (
+            "openai_codex",
+            "gpt-5.6-sol",
+            [
+                ReasoningEffort.LOW,
+                ReasoningEffort.MEDIUM,
+                ReasoningEffort.HIGH,
+                ReasoningEffort.XHIGH,
+                ReasoningEffort.MAX,
+                ReasoningEffort.ULTRA,
+            ],
+        ),
+        (
+            "openai_codex",
+            "gpt-5.6-luna",
+            [
+                ReasoningEffort.LOW,
+                ReasoningEffort.MEDIUM,
+                ReasoningEffort.HIGH,
+                ReasoningEffort.XHIGH,
+                ReasoningEffort.MAX,
+            ],
+        ),
+        (
+            "claude_code_cli",
+            "claude-opus-4-8",
+            [
+                ReasoningEffort.LOW,
+                ReasoningEffort.MEDIUM,
+                ReasoningEffort.HIGH,
+                ReasoningEffort.XHIGH,
+                ReasoningEffort.MAX,
+            ],
+        ),
+    ],
+)
+def test_cli_supported_reasoning_efforts(
+    provider: str,
+    model_name: str,
+    expected: list[ReasoningEffort],
+) -> None:
+    assert supported_reasoning_efforts(provider, [model_name], None) == expected
+
+
 @pytest.mark.parametrize("model_name", ["o1-mini", "o1-preview", "o1-mini-2024-09-12"])
 def test_models_rejecting_reasoning_effort_support_no_levels(model_name: str) -> None:
     """These models reason but take no effort parameter on any surface, so the

@@ -842,7 +842,11 @@ class LitellmLLM(LLM):
                     ReasoningEffort.HIGH,
                 ]:
                     optional_kwargs["reasoning_effort"] = reasoning_effort.value
-                elif reasoning_effort is ReasoningEffort.XHIGH:
+                elif reasoning_effort in (
+                    ReasoningEffort.XHIGH,
+                    ReasoningEffort.MAX,
+                    ReasoningEffort.ULTRA,
+                ):
                     # Provider mappings behind litellm's reasoning_effort are
                     # uneven (Gemini raises on xhigh), clamp to high. The model
                     # picker greys the level out for these models, so reaching
