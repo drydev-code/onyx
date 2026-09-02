@@ -1097,13 +1097,15 @@ def translate_assistant_message_to_packets(
     if collaboration_events:
         collaboration_turn_index = max_tool_turn + 1
         collaboration_placement = Placement(turn_index=collaboration_turn_index)
-        for collaboration_event in collaboration_events:
-            packet_list.append(
+        packet_list.extend(
+            (
                 Packet(
                     placement=collaboration_placement,
                     obj=collaboration_event,
                 )
+                for collaboration_event in collaboration_events
             )
+        )
         packet_list.append(Packet(placement=collaboration_placement, obj=SectionEnd()))
 
     citations = chat_message.citations

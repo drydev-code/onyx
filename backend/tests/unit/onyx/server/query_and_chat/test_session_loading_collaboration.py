@@ -8,9 +8,11 @@ from onyx.db.models import ChatMessage
 from onyx.server.query_and_chat.session_loading import (
     translate_assistant_message_to_packets,
 )
-from onyx.server.query_and_chat.streaming_models import CollaborationEvent
-from onyx.server.query_and_chat.streaming_models import ReasoningDelta
-from onyx.server.query_and_chat.streaming_models import StreamingType
+from onyx.server.query_and_chat.streaming_models import (
+    CollaborationEvent,
+    ReasoningDelta,
+    StreamingType,
+)
 
 
 def test_translate_assistant_message_restores_collaboration_output() -> None:
