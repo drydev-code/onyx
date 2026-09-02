@@ -1,7 +1,7 @@
 """seed parallel agent tool
 
 Revision ID: a4c2e8f91b7d
-Revises: 9d2e7a41c6bf
+Revises: 947b94d2ebf1
 Create Date: 2026-09-02
 
 """
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "a4c2e8f91b7d"
-down_revision = "9d2e7a41c6bf"
+down_revision = "947b94d2ebf1"
 branch_labels = None
 depends_on = None
 
